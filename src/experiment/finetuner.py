@@ -1,6 +1,8 @@
 from submodules.Long_CLIP.model import longclip
+
 import json
 import torch
+import os
 import matplotlib.pyplot as plt
 from PIL import Image
 from tqdm import tqdm
@@ -11,12 +13,35 @@ from torch.optim.lr_scheduler import OneCycleLR
 from adabelief_pytorch import AdaBelief
 
 
+# class MathDataset(Dataset):
+#     def __init__(self, metadata_path:str, caption_field_name:str, transform=None):
+#         self.transform = transform
+#         self.caption_field_name = caption_field_name
+#         with open(metadata_path,'r',encoding='utf-8') as file:
+#             self.metadata=list(json.loads(file.read()).values())
+#         self.image_paths = []
+#         for sample in self.metadata:
+#             self.image_paths.append(sample["file_path"])
+
+#     def __len__(self):
+#         return len(self.image_paths)
+
+#     def __getitem__(self, idx):
+#         image_path = self.image_paths[idx]
+#         image = Image.open(image_path).convert('RGB')  # Convert to RGB
+#         if self.transform:
+#             image = self.transform(image)
+
+#         caption = self.metadata[idx][self.caption_field_name]
+#         if(isinstance(caption, list)): # If caption is list of sentences (in case of artpedia), make into single caption
+#             caption = " ".join(caption)
+#         text = longclip.tokenize(caption, truncate=True) # Tokenize the caption
+
+#         return image, text.squeeze(0) # Remove the extra dimension
+
 class MathDataset(Dataset):
-    def __init__(self, metadata_path:str, caption_field_name:str, transform=None):
+    def __init__(self, metadata:str, transform=None):
         self.transform = transform
-        self.caption_field_name = caption_field_name
-        with open(metadata_path,'r',encoding='utf-8') as file:
-            self.metadata=list(json.loads(file.read()).values())
         self.image_paths = []
         for sample in self.metadata:
             self.image_paths.append(sample["file_path"])
@@ -62,11 +87,9 @@ class finetune:
     """
     Finetune longclip checkpoints
     """
-    def __init__(self, val_path:str, train_path:str, caption_field_name:str, checkpoint_output_path:str, epochs:int=6, save_min_loss:bool=True, checkpoint_input_path:str='submodules/longclip/checkpoints/longclip-L.pt', **kwargs):
+    def __init__(self, data, caption_field_name:str, checkpoint_output_path:str, epochs:int=6, save_min_loss:bool=True, checkpoint_input_path:str='submodules/longclip/checkpoints/longclip-L.pt', **kwargs):
         """
         Args:
-            val_path: Path to validation set
-            train_path: Path to train set
             caption_field_name: Name of caption field within metadata file
             checkpoint_output_path: Desired path to output finetuned checkpoint files
             checkpoint_input_path: Path of checkpoints to be finetuned
@@ -92,8 +115,8 @@ class finetune:
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.model, self.preprocess = longclip.load(checkpoint_input_path, device=self.device)
 
-        self.train_dataset = ArtCaptionDataset(train_path, self.caption_field_name, transform=self.preprocess)
-        self.val_dataset = ArtCaptionDataset(val_path, self.caption_field_name, transform=self.preprocess)
+        self.train_dataset = MathDataset(train_path, self.caption_field_name, transform=self.preprocess)
+        self.val_dataset = MathDataset(val_path, self.caption_field_name, transform=self.preprocess)
 
     def trainloop(self):
         """
