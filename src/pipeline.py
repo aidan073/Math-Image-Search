@@ -3,6 +3,11 @@ from submodules.Long_CLIP.model import longclip
 import torch
 from PIL import Image
 
+# will perform the following:
+# prepare dataset
+# finetune
+# evaluate
+
 device = "cuda" if torch.cuda.is_available() else "cpu"
 model, preprocess = longclip.load("./checkpoints/longclip-B.pt", device=device)
 
