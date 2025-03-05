@@ -26,11 +26,11 @@ match args.pipe.lower():
         train_split, val_split, test_split = process_data(args.metadata_path, args.images_path, validate_data=True)
         if not os.path.exists(args.save_splits_path):
             os.mkdir(args.save_splits_path)
-        with open('train_split.npy', 'wb') as f1:
+        with open(os.path.join(args.save_splits_path, 'train_split.npy'), 'wb') as f1:
             np.save(f1, train_split)
-        with open('val_split.npy', 'wb') as f2:
+        with open(os.path.join(args.save_splits_path, 'val_split.npy'), 'wb') as f2:
             np.save(f2, train_split)
-        with open('test_split.npy', 'wb') as f3:
+        with open(os.path.join(args.save_splits_path, 'test_split.npy'), 'wb') as f3:
             np.save(f3, train_split)
 
     case 'finetune':
@@ -38,7 +38,7 @@ match args.pipe.lower():
 
     case 'evaluate':
         pass
-    
+
     case 'complete':
         if not (args.metadata_path and args.images_path):
             raise argparse.ArgumentError(None, "Missing required arguments for complete pipe. Usage: --pipe complete -m <metadata_path> -i <images_path>")
