@@ -9,34 +9,28 @@ from tqdm import tqdm
 from colorama import Fore, Style
 from torch.amp import GradScaler
 from torch.optim.lr_scheduler import OneCycleLR
+from torch.utils.data import Dataset, DataLoader
 from adabelief_pytorch import AdaBelief
 
 
-# class MathDataset(Dataset):
-#     def __init__(self, metadata_path:str, caption_field_name:str, transform=None):
-#         self.transform = transform
-#         self.caption_field_name = caption_field_name
-#         with open(metadata_path,'r',encoding='utf-8') as file:
-#             self.metadata=list(json.loads(file.read()).values())
-#         self.image_paths = []
-#         for sample in self.metadata:
-#             self.image_paths.append(sample["file_path"])
+class MathDataset(Dataset):
+    def __init__(self, metadata:str, transform=None):
+        self.transform = transform
+        self.metadata = metadata
 
-#     def __len__(self):
-#         return len(self.image_paths)
+    def __len__(self):
+        return len(self.image_paths)
 
-#     def __getitem__(self, idx):
-#         image_path = self.image_paths[idx]
-#         image = Image.open(image_path).convert('RGB')  # Convert to RGB
-#         if self.transform:
-#             image = self.transform(image)
+    def __getitem__(self, idx):
+        image_path = self.metadata[idx][2]
+        image = Image.open(image_path).convert('RGB')  # Convert to RGB
+        if self.transform:
+            image = self.transform(image)
 
-#         caption = self.metadata[idx][self.caption_field_name]
-#         if(isinstance(caption, list)): # If caption is list of sentences (in case of artpedia), make into single caption
-#             caption = " ".join(caption)
-#         text = longclip.tokenize(caption, truncate=True) # Tokenize the caption
+        caption = self.metadata[idx][1]
+        text = longclip.tokenize(caption, truncate=True) # Tokenize the caption
 
-#         return image, text.squeeze(0) # Remove the extra dimension
+        return image, text.squeeze(0) # Remove the extra dimension
     
 class ContrastiveLoss(torch.nn.Module):
     def __init__(self, temperature=0.07):
