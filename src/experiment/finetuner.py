@@ -1,9 +1,9 @@
 from submodules.Long_CLIP.model import longclip
 
-import csv
 import torch
 import os
 import matplotlib.pyplot as plt
+import numpy as np
 from PIL import Image
 from tqdm import tqdm
 from colorama import Fore, Style
@@ -14,12 +14,13 @@ from adabelief_pytorch import AdaBelief
 
 
 class MathDataset(Dataset):
-    def __init__(self, metadata:str, transform=None):
+    def __init__(self, metadata:list[list[str]], corrupted_ids:set[str], transform=None):
+        self.metadata = [sample for sample in metadata if sample[0] not in corrupted_ids] # get only non-corrupted samples
+        self.corrupted_ids = corrupted_ids
         self.transform = transform
-        self.metadata = metadata
 
     def __len__(self):
-        return len(self.image_paths)
+        return len(self.metadata)
 
     def __getitem__(self, idx):
         image_path = self.metadata[idx][2]
@@ -53,40 +54,51 @@ class ContrastiveLoss(torch.nn.Module):
 
         return (loss_img + loss_txt) / 2
 
+# TO DO: Probably use text.encode and image.encode instead of standard longclip() forward call. Previously i modified the forward call, but this time i will need the forward for distributed. Or just setup distributed now.
 class finetune:
     """
     Finetune longclip checkpoints
     """
-    def __init__(self, data, caption_field_name:str, checkpoint_output_path:str, epochs:int=6, save_min_loss:bool=True, checkpoint_input_path:str='submodules/longclip/checkpoints/longclip-L.pt', **kwargs):
+    def __init__(self, splits_path:str, corrupted_path:str, checkpoint_input_path:str, output_path:str, epochs:int=6, save_min_loss:bool=False, **kwargs):
         """
         Args:
-            caption_field_name: Name of caption field within metadata file
-            checkpoint_output_path: Desired path to output finetuned checkpoint files
+            splits_path: Path to the folder containing the split up metadata
+            corrupted_path: Path to the .txt file that contains the corrupted image ids
             checkpoint_input_path: Path of checkpoints to be finetuned
+            output_path: Desired folder path to output finetuned checkpoints and figures/logs
+            epochs: Number of epochs to finetune for
             save_min_loss: Only save checkpoints when the validation loss is lower than all previous checkpoints
         """
-        self.caption_field_name = caption_field_name
         self.checkpoint_input_path = checkpoint_input_path
-        self.checkpoint_output_path = checkpoint_output_path
+        self.output_path = output_path
         self.epochs = epochs
         self.save_min_loss = save_min_loss
 
-        # Save training plots with matplotlib to:
+        # Save training plots with matplotlib
         self.plots_folder = kwargs.get('plots_folder', 'ft-plots')
         os.makedirs(self.plots_folder, exist_ok=True)
-        # Save model .pt files to: 
+        # Save model .pt files
         self.ft_checkpoints_folder = kwargs.get('ft_checkpoints_folder', 'ft-checkpoints')
         os.makedirs(self.ft_checkpoints_folder, exist_ok=True)
-        # Save verbose text / training logs to:
+        # Save verbose text / training logs
         self.text_logs_folder = kwargs.get('text_logs_folder', 'ft-logs')
         os.makedirs(self.text_logs_folder, exist_ok=True)
 
-        # Load model and preprocessing - path to Long-CLIP model file:
+        # Load model and preprocessing - path to Long-CLIP model file
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.model, self.preprocess = longclip.load(checkpoint_input_path, device=self.device)
 
-        self.train_dataset = MathDataset(train_path, self.caption_field_name, transform=self.preprocess)
-        self.val_dataset = MathDataset(val_path, self.caption_field_name, transform=self.preprocess)
+        # Gather corrupted ids
+        corrupted_ids = []
+        with open(corrupted_path, 'r', encoding='utf-8') as f:
+            corrupted_ids = f.readlines()
+        corrupted_ids = set(corrupted_ids)
+
+        # Get datasets 
+        train_split = np.load(os.path.join(splits_path, "train_split.npy"))
+        val_split = np.load(os.path.join(splits_path, "val_split.npy"))
+        self.train_dataset = MathDataset(train_split, corrupted_ids, self.caption_field_name, transform=self.preprocess)
+        self.val_dataset = MathDataset(val_split, corrupted_ids, self.caption_field_name, transform=self.preprocess)
 
     def trainloop(self):
         """
@@ -183,7 +195,7 @@ class finetune:
                 plt.ylabel('Loss')
                 plt.title('Training and Validation Loss Over Epochs')
                 plt.legend()
-                plt.savefig(f"{self.plots_folder}/loss_plot_epoch_{epoch + 1}.png")
+                plt.savefig(os.path.join(self.output_path, self.plots_folder, f"loss_plot_epoch_{epoch + 1}.png"))
                 plt.close()        
             
             
@@ -191,14 +203,14 @@ class finetune:
             print(Fore.YELLOW + f"Epoch {epoch + 1}/{EPOCHS} - Training Loss: {avg_train_loss:.4f}, Validation Loss: {avg_val_loss:.4f}")
             print(Fore.YELLOW + "============================================================" + Style.RESET_ALL)
             
-            with open(f"{self.text_logs_folder}/log_training.txt", "a", encoding='utf-8') as f:
+            with open(os.path.join(self.output_path, self.text_logs_folder, "log_training.txt", "a", encoding='utf-8')) as f:
                 f.write("======================== STATS =============================\n")
                 f.write(f"Epoch {epoch + 1}/{EPOCHS} - Training Loss: {avg_train_loss:.4f}, Validation Loss: {avg_val_loss:.4f}\n")
                 f.write("============================================================\n")
 
-            # Save model every <> epochs + save final model
-            if (self.save_min_loss == False or self.save_min_loss == True and min_flag == True) and (epoch + 1) % 1 == 0 or epoch == EPOCHS - 1:
-                output_path = f"{self.ft_checkpoints_folder}/{self.checkpoint_output_path}{epoch+1}.pt"
+            # Save model every epoch unless only saving min
+            if (self.save_min_loss == False or (self.save_min_loss == True and min_flag == True)):
+                output_path = os.path.join(self.output_path, self.ft_checkpoints_folder, f"{epoch+1}.pt")
                 torch.save(model.state_dict(), output_path)      
                 print(Fore.GREEN + f"Checkpoint saved at: {output_path}" + Style.RESET_ALL)
 
@@ -271,9 +283,9 @@ class finetune:
         if use_log_scale:
             plt.yscale('log')
             plt.title(f'Gradient Norms for Epoch {epoch}{" - Log Scale" if use_log_scale else ""}')
-            plt.savefig(f"{self.plots_folder}/gradient_norms_epoch_{epoch}_log.png")
+            plt.savefig(os.path.join(self.output_path, self.plots_folder, f"gradient_norms_epoch_{epoch}_log.png"))
         else:
-            plt.savefig(f"{self.plots_folder}/gradient_norms_epoch_{epoch}.png")
+            plt.savefig(os.path.join(self.output_path, self.plots_folder, f"gradient_norms_epoch_{epoch}.png"))
         
         plt.close()
 

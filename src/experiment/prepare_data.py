@@ -56,13 +56,13 @@ def integrity(metadata, output_path:str='missing_or_corrupted.txt', ignore_excep
             integral_data = False
     return integral_data
 
-def process_data(metadata_path:str, images_path:str, validate_data:bool=False)->tuple[np.ndarray, np.ndarray, np.ndarray]:
+def process_data(metadata_path:str, images_path:str, validate_data:bool=False)->tuple[list[list[str]], list[list[str]], list[list[str]]]:
     """
     metadata_path: path to .csv MSE dataset
     images_path: path to directory containing MSE images
     validata_data: if True, the entire MSE dataset will be checked for corrupted files or other invalidations (slow for large datasets).
     """
-    metadata = []
+    metadata = [] # [[id, title, image_path], ...]
     with open(metadata_path, "r", encoding='utf-8') as f:
         reader = csv.reader(f, delimiter="\t")
         next(reader, None)
