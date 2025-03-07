@@ -1,0 +1,8 @@
+__pycache__/
+.vscode/
+*.pyc
+
+submodules/Long_CLIP/
+venv/
+splits/
+missing_or_corrupted.txt

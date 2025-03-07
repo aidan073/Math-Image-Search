@@ -175,10 +175,6 @@ class finetune:
                 if rank == 0:
                     self.scheduler.step()
                     self.scaler.update()
-
-            # Wait for all processes to finish epoch
-            if self.distributed:
-                dist.barrier()
                         
                 # Store gradient norms for plot
                 for name, parameter in model.named_parameters():
@@ -196,7 +192,6 @@ class finetune:
                 with open(f"{self.text_logs_folder}/log_details_train.txt", "a", encoding='utf-8') as f:
                     f.write(f"Epoch {epoch + 1}/{self.epochs}, Batch: {batch_idx + 1}/{len(self.train_dataloader)}, Loss: {total_loss.item():.4f}\n")
     
-            
             avg_train_loss = total_train_loss / len(self.train_dataloader)
             training_losses.append(avg_train_loss)
             self._plot_gradient_norms(gradient_norms, epoch)
