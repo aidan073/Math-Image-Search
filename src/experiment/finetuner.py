@@ -2,14 +2,17 @@ from submodules.Long_CLIP.model import longclip
 
 import torch
 import os
-import matplotlib.pyplot as plt
 import numpy as np
+import matplotlib.pyplot as plt
+import torch.distributed as dist
+import torch.multiprocessing as mp
 from PIL import Image
 from tqdm import tqdm
 from colorama import Fore, Style
 from torch.amp import GradScaler
 from torch.optim.lr_scheduler import OneCycleLR
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, DistributedSampler
+from torch.nn.parallel import DistributedDataParallel as DDP
 from adabelief_pytorch import AdaBelief
 
 
@@ -59,9 +62,10 @@ class finetune:
     """
     Finetune longclip checkpoints
     """
-    def __init__(self, splits_path:str, corrupted_path:str, checkpoint_input_path:str, output_path:str, epochs:int=6, save_min_loss:bool=False, **kwargs):
+    def __init__(self, distributed:bool, splits_path:str, corrupted_path:str, checkpoint_input_path:str, output_path:str, epochs:int=6, batch_size:int=30, save_min_loss:bool=False, **kwargs):
         """
         Args:
+            distributed: If True, fine-tuning will be performed using multiple GPUs
             splits_path: Path to the folder containing the split up metadata
             corrupted_path: Path to the .txt file that contains the corrupted image ids
             checkpoint_input_path: Path of checkpoints to be finetuned
@@ -69,9 +73,14 @@ class finetune:
             epochs: Number of epochs to finetune for
             save_min_loss: Only save checkpoints when the validation loss is lower than all previous checkpoints
         """
+
+        self.epochs = epochs
+        self.batch_size = batch_size
+        self.learning_rate = 1e-7
+        self.scaler = GradScaler()
+        self.distributed = distributed
         self.checkpoint_input_path = checkpoint_input_path
         self.output_path = output_path
-        self.epochs = epochs
         self.save_min_loss = save_min_loss
 
         # Save training plots with matplotlib
@@ -97,51 +106,79 @@ class finetune:
         # Get datasets 
         train_split = np.load(os.path.join(splits_path, "train_split.npy"))
         val_split = np.load(os.path.join(splits_path, "val_split.npy"))
-        self.train_dataset = MathDataset(train_split, corrupted_ids, self.caption_field_name, transform=self.preprocess)
-        self.val_dataset = MathDataset(val_split, corrupted_ids, self.caption_field_name, transform=self.preprocess)
+        train_dataset = MathDataset(train_split, corrupted_ids, self.caption_field_name, transform=self.preprocess)
+        val_dataset = MathDataset(val_split, corrupted_ids, self.caption_field_name, transform=self.preprocess)
+        self.train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+        self.val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True)
 
-    def trainloop(self):
+        total_steps = (len(self.train_dataloader) // batch_size) * epochs
+        self.optimizer = AdaBelief(self.model.parameters(), lr=self.learning_rate, eps=1e-16, betas=(0.9, 0.995), weight_decay=1e-3, weight_decouple=False, rectify=True, print_change_log = False)
+        self.scheduler = OneCycleLR(self.optimizer, max_lr=self.learning_rate, total_steps=total_steps, pct_start=0.1, anneal_strategy='linear')
+
+        # Set up distributed environment
+        if self.distributed:
+            world_size = torch.cuda.device_count()
+            self.scheduler.total_steps = total_steps // world_size
+            mp.spawn(self.dist_train, args=(world_size,), nprocs=world_size, join=True)
+
+    def dist_train(self, rank:int, world_size:int):
+        # Set up GPU communication
+        os.environ["MASTER_ADDR"] = "localhost"
+        os.environ["MASTER_PORT"] = "12354"
+        dist.init_process_group("nccl", rank=rank, world_size=world_size)
+        
+        # Move model to current GPU
+        self.model.to(rank)
+        self.model = DDP(self.model, device_ids=[rank])
+
+        # Ensures each GPU sees a different batch shard
+        train_sampler = DistributedSampler(self.train_dataset, num_replicas=world_size, rank=rank)
+        self.train_dataloader.sampler = train_sampler
+
+        self.trainloop(rank)
+
+
+    def trainloop(self, rank:int):
         """
         Complete training loop. Outputs finetuned checkpoints in designated directory, as well as additional logs
         """
-        loss_func = ContrastiveLoss()
+        unfreeze_all = True
         training_losses = []
         validation_losses = []
-
-        """CONFIG"""
-        EPOCHS = self.epochs
-        learning_rate = 1e-7
-        batch_size = 30
-        train_dataloader = DataLoader(self.train_dataset, batch_size=batch_size, shuffle=True)
-        val_dataloader = DataLoader(self.val_dataset, batch_size=batch_size, shuffle=True)
-        total_steps = len(train_dataloader) * EPOCHS
-        unfreeze_all = True
-        scaler = GradScaler()
-        optimizer = AdaBelief(self.model.parameters(), lr=learning_rate, eps=1e-16, betas=(0.9, 0.995), weight_decay=1e-3, weight_decouple=False, rectify=True, print_change_log = False)
-        scheduler = OneCycleLR(optimizer, max_lr=learning_rate, total_steps=total_steps, pct_start=0.1, anneal_strategy='linear')
         
         min_val_loss = 0 # save only min val loss checkpoints if save_min_loss arg == True
         model = self.model.float()
         print(f"Precision: {model.dtype}")
-        print(f'Total batches: {len(train_dataloader)} @ Batch Size: {batch_size}')
+        print(f'Total batches: {len(self.train_dataloader)} @ Batch Size: {self.batch_size}')
         print("== START == \n")
-        for epoch in range(EPOCHS):
+        for epoch in range(self.epochs):
+            if self.distributed:
+                self.train_dataloader.sampler.set_epoch(epoch)
+
             gradient_norms = {}
             self._unfreeze_layers(model, epoch, total_layers=24, unfreeze_all=unfreeze_all)
             model.train()
             total_train_loss = 0.0
-            progress_bar = tqdm(enumerate(train_dataloader), total=len(train_dataloader), desc=f'Epoch {epoch + 1}/{EPOCHS}', leave=True)
+            progress_bar = tqdm(enumerate(self.train_dataloader), total=len(self.train_dataloader), desc=f'Epoch {epoch + 1}/{self.epochs}', leave=True)
+
             for batch_idx, (images, texts) in progress_bar:
-                images, texts = images.to(self.device), texts.to(self.device)
+                images, texts = images.to(rank), texts.to(rank)
                 
-                optimizer.zero_grad()
                 with torch.autocast(device_type=self.device):
                     logits_per_image, logits_per_text = model(images, texts)
-                    total_loss = loss_func(logits_per_image, logits_per_text)
-                scaler.scale(total_loss).backward()
-                scaler.step(optimizer)
-                scheduler.step()
-                scaler.update()
+                    total_loss = ContrastiveLoss(logits_per_image, logits_per_text)
+
+                self.optimizer.zero_grad()
+                self.scaler.scale(total_loss).backward()
+                self.scaler.step(self.optimizer)
+
+                if rank == 0:
+                    self.scheduler.step()
+                    self.scaler.update()
+
+            # Wait for all processes to finish epoch
+            if self.distributed:
+                dist.barrier()
                         
                 # Store gradient norms for plot
                 for name, parameter in model.named_parameters():
@@ -157,10 +194,10 @@ class finetune:
 
                 progress_bar.set_postfix({'loss': f'{total_train_loss / (batch_idx + 1):.4f}'})
                 with open(f"{self.text_logs_folder}/log_details_train.txt", "a", encoding='utf-8') as f:
-                    f.write(f"Epoch {epoch + 1}/{EPOCHS}, Batch: {batch_idx + 1}/{len(train_dataloader)}, Loss: {total_loss.item():.4f}\n")
+                    f.write(f"Epoch {epoch + 1}/{self.epochs}, Batch: {batch_idx + 1}/{len(self.train_dataloader)}, Loss: {total_loss.item():.4f}\n")
     
             
-            avg_train_loss = total_train_loss / len(train_dataloader)
+            avg_train_loss = total_train_loss / len(self.train_dataloader)
             training_losses.append(avg_train_loss)
             self._plot_gradient_norms(gradient_norms, epoch)
 
@@ -170,13 +207,13 @@ class finetune:
             min_flag = False
             val_total_loss = 0
             with torch.no_grad():
-                for images, texts in val_dataloader:
+                for images, texts in self.val_dataloader:
                     images, texts = images.to(self.device), texts.to(self.device)
                     images = model.encode_image(images)
                     texts = model.encode_text(texts)
-                    val_total_loss += loss_func(images, texts).item()
+                    val_total_loss += ContrastiveLoss(images, texts).item()
 
-            avg_val_loss = val_total_loss / len(val_dataloader)
+            avg_val_loss = val_total_loss / len(self.val_dataloader)
             validation_losses.append(avg_val_loss)
 
             if epoch==0:
@@ -200,12 +237,12 @@ class finetune:
             
             
             print(Fore.YELLOW + "======================== STATS =============================")
-            print(Fore.YELLOW + f"Epoch {epoch + 1}/{EPOCHS} - Training Loss: {avg_train_loss:.4f}, Validation Loss: {avg_val_loss:.4f}")
+            print(Fore.YELLOW + f"Epoch {epoch + 1}/{self.epochs} - Training Loss: {avg_train_loss:.4f}, Validation Loss: {avg_val_loss:.4f}")
             print(Fore.YELLOW + "============================================================" + Style.RESET_ALL)
             
             with open(os.path.join(self.output_path, self.text_logs_folder, "log_training.txt", "a", encoding='utf-8')) as f:
                 f.write("======================== STATS =============================\n")
-                f.write(f"Epoch {epoch + 1}/{EPOCHS} - Training Loss: {avg_train_loss:.4f}, Validation Loss: {avg_val_loss:.4f}\n")
+                f.write(f"Epoch {epoch + 1}/{self.epochs} - Training Loss: {avg_train_loss:.4f}, Validation Loss: {avg_val_loss:.4f}\n")
                 f.write("============================================================\n")
 
             # Save model every epoch unless only saving min
@@ -213,6 +250,9 @@ class finetune:
                 output_path = os.path.join(self.output_path, self.ft_checkpoints_folder, f"{epoch+1}.pt")
                 torch.save(model.state_dict(), output_path)      
                 print(Fore.GREEN + f"Checkpoint saved at: {output_path}" + Style.RESET_ALL)
+            
+        if self.distributed:
+            dist.destroy_process_group()
 
     def _adjust_unfreeze_rate(self, epoch, adjust_after=12, increase_rate=2):
         """
@@ -288,8 +328,3 @@ class finetune:
             plt.savefig(os.path.join(self.output_path, self.plots_folder, f"gradient_norms_epoch_{epoch}.png"))
         
         plt.close()
-
-if __name__ == '__main__':
-
-    finetuner = finetune()
-    finetuner.trainloop()
