@@ -47,7 +47,7 @@ match args.pipe.lower():
 
     case 'finetune':
         if not (args.splits_path and args.corrupted and args.c_input_path and args.c_output_path):
-            raise argparse.ArgumentError(None, "Missing required arguments for finetune pipe. Usage: --pipe finetune -s <splits_path> -x <corrupted_files_path> -c <checkpoint_input_path> -o <checkpoint_output_path>")
+            raise argparse.ArgumentError(None, "Missing required arguments for finetune pipe. Usage: --pipe finetune -s <splits_path> -x <corrupted_files_path> -c <checkpoint_input_path> -o <checkpoint_output_path> [--distributed]")
         if os.path.exists(args.c_output_path):
             raise FileExistsError("Designated output folder {args.c_output_path} already exists. Please delete it or provide a different output folder name for c_output_path.")
         os.mkdir(args.c_output_path)
