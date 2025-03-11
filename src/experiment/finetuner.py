@@ -15,7 +15,6 @@ from torch.utils.data import Dataset, DataLoader, DistributedSampler
 from torch.nn.parallel import DistributedDataParallel as DDP
 from adabelief_pytorch import AdaBelief
 
-
 class MathDataset(Dataset):
     def __init__(self, metadata:list[list[str]], corrupted_ids:set[str], transform=None):
         self.metadata = [sample for sample in metadata if sample[0] not in corrupted_ids] # get only non-corrupted samples
@@ -35,33 +34,30 @@ class MathDataset(Dataset):
         text = longclip.tokenize(caption, truncate=True) # Tokenize the caption
 
         return image, text.squeeze(0) # Remove the extra dimension
-    
+
 class ContrastiveLoss(torch.nn.Module):
     def __init__(self, temperature=0.07):
-        super(ContrastiveLoss, self).__init__()
+        super(finetune.ContrastiveLoss, self).__init__()
         self.temperature = temperature
-        self.criterion = torch.nn.CrossEntropyLoss()
+        self.criterion = torch.nn.functional.cross_entropy()
 
-    def forward(self, logits_per_image, logits_per_text):
-        # Normalize the features to avoid overflow or underflow
-        logits_per_image = torch.nn.functional.normalize(logits_per_image, p=2, dim=1)
-        logits_per_text = torch.nn.functional.normalize(logits_per_text, p=2, dim=1)
-
-        # Calculate logits
-        logits = torch.matmul(logits_per_image, logits_per_text.t()) / self.temperature
-        labels = torch.arange(logits.size(0), device=logits.device)
-
+    def forward(self, sim_i2t, sim_t2i, rank):
         # Calculate loss as the mean of the two cross-entropy losses
-        loss_img = self.criterion(logits, labels)
-        loss_txt = self.criterion(logits.t(), labels)
+        bs = sim_i2t.size(0)
+        targets = torch.linspace(rank * bs,rank * bs + bs - 1, bs, dtype=torch.long).to(sim_i2t.device)
+
+        loss_img = self.criterion(sim_i2t, targets, label_smoothing=0.1)
+        loss_txt = self.criterion(sim_t2i, targets, label_smoothing=0.1)
 
         return (loss_img + loss_txt) / 2
+
 
 # TO DO: Probably use text.encode and image.encode instead of standard longclip() forward call. Previously i modified the forward call, but this time i will need the forward for distributed. Or just setup distributed now.
 class finetune:
     """
     Finetune longclip checkpoints
     """
+        
     def __init__(self, distributed:bool, splits_path:str, corrupted_path:str, checkpoint_input_path:str, output_path:str, epochs:int=6, batch_size:int=30, save_min_loss:bool=False, **kwargs):
         """
         Args:
@@ -106,42 +102,46 @@ class finetune:
         # Get datasets 
         train_split = np.load(os.path.join(splits_path, "train_split.npy"))
         val_split = np.load(os.path.join(splits_path, "val_split.npy"))
-        train_dataset = MathDataset(train_split, corrupted_ids, self.caption_field_name, transform=self.preprocess)
-        val_dataset = MathDataset(val_split, corrupted_ids, self.caption_field_name, transform=self.preprocess)
-        self.train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-        self.val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True)
-
-        total_steps = (len(self.train_dataloader) // batch_size) * epochs
-        self.optimizer = AdaBelief(self.model.parameters(), lr=self.learning_rate, eps=1e-16, betas=(0.9, 0.995), weight_decay=1e-3, weight_decouple=False, rectify=True, print_change_log = False)
-        self.scheduler = OneCycleLR(self.optimizer, max_lr=self.learning_rate, total_steps=total_steps, pct_start=0.1, anneal_strategy='linear')
+        self.train_dataset = MathDataset(train_split, corrupted_ids, self.caption_field_name, transform=self.preprocess)
+        self.val_dataset = MathDataset(val_split, corrupted_ids, self.caption_field_name, transform=self.preprocess)
+        self.train_dataloader = DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True)
+        self.val_dataloader = DataLoader(self.val_dataset, batch_size=batch_size, shuffle=True)
+        self.total_steps = (len(self.train_dataloader) // batch_size) * epochs
 
         # Set up distributed environment
         if self.distributed:
-            world_size = torch.cuda.device_count()
-            self.scheduler.total_steps = total_steps // world_size
-            mp.spawn(self.dist_train, args=(world_size,), nprocs=world_size, join=True)
+            self.world_size = torch.cuda.device_count()
+            assert self.world_size >= 2, f"Distributed requires at least 2 GPUs to run, but got {self.world_size}"
+            self.total_steps = self.total_steps // self.world_size # simulating batch_size of batch_size*world_size, so you need less steps
+            mp.spawn(self.dist_train, args=(self.world_size, self.train_dataset, self.world_size), nprocs=self.world_size, join=True)
+        else:
+            self.world_size = 1
 
     def dist_train(self, rank:int, world_size:int):
         # Set up GPU communication
         os.environ["MASTER_ADDR"] = "localhost"
         os.environ["MASTER_PORT"] = "12354"
-        dist.init_process_group("nccl", rank=rank, world_size=world_size)
+        dist.init_process_group("nccl", rank=rank, world_size=self.world_size)
         
         # Move model to current GPU
         self.model.to(rank)
-        self.model = DDP(self.model, device_ids=[rank])
+        self.model = DDP(self.model, device_ids=[rank]).module
 
         # Ensures each GPU sees a different batch shard
-        train_sampler = DistributedSampler(self.train_dataset, num_replicas=world_size, rank=rank)
-        self.train_dataloader.sampler = train_sampler
+        train_sampler = DistributedSampler(self.train_dataset, num_replicas=self.world_size, rank=rank)
+        self.train_dataloader = DataLoader(self.train_dataset, sampler=train_sampler, batch_size=self.batch_size, shuffle=True)
 
         self.trainloop(rank)
 
 
-    def trainloop(self, rank:int):
+    def trainloop(self, rank:int=0):
         """
         Complete training loop. Outputs finetuned checkpoints in designated directory, as well as additional logs
         """
+        
+        self.optimizer = AdaBelief(self.model.parameters(), lr=self.learning_rate, eps=1e-16, betas=(0.9, 0.995), weight_decay=1e-3, weight_decouple=False, rectify=True, print_change_log = False)
+        self.scheduler = OneCycleLR(self.optimizer, max_lr=self.learning_rate, total_steps=self.total_steps, pct_start=0.1, anneal_strategy='linear')
+
         unfreeze_all = True
         training_losses = []
         validation_losses = []
@@ -159,93 +159,98 @@ class finetune:
             self._unfreeze_layers(model, epoch, total_layers=24, unfreeze_all=unfreeze_all)
             model.train()
             total_train_loss = 0.0
-            progress_bar = tqdm(enumerate(self.train_dataloader), total=len(self.train_dataloader), desc=f'Epoch {epoch + 1}/{self.epochs}', leave=True)
+            progress_bar = tqdm(enumerate(self.train_dataloader), total=len(self.train_dataloader), desc=f'Epoch {epoch + 1}/{self.epochs}', leave=True, disable=(self.rank != 0))
 
             for batch_idx, (images, texts) in progress_bar:
                 images, texts = images.to(rank), texts.to(rank)
                 
                 with torch.autocast(device_type=self.device):
-                    logits_per_image, logits_per_text = model(images, texts)
-                    total_loss = ContrastiveLoss(logits_per_image, logits_per_text)
+                    sim_i2t, sim_t2i = model(images, texts)
+                    total_loss = ContrastiveLoss(sim_i2t, sim_t2i, rank)
 
                 self.optimizer.zero_grad()
                 self.scaler.scale(total_loss).backward()
                 self.scaler.step(self.optimizer)
-
-                if rank == 0:
-                    self.scheduler.step()
-                    self.scaler.update()
-                        
-                # Store gradient norms for plot
-                for name, parameter in model.named_parameters():
-                    if parameter.grad is not None:
-                        grad_norm = parameter.grad.norm().item()
-                        gradient_norms.setdefault(name, []).append(grad_norm)
                 
-                # OPTIONAL DEBUG
-                # use this line to debug (and be spammed with red messages about exploding and vanishing gradients):
-                # monitor_gradient_norms(gradient_norms)
+                # Once per batch
+                if self.rank==0:
+                    # Store gradient norms for plot
+                    for name, parameter in model.named_parameters():
+                        if parameter.grad is not None:
+                            grad_norm = parameter.grad.norm().item()
+                            gradient_norms.setdefault(name, []).append(grad_norm)
                 
-                total_train_loss += total_loss.item()
+                    # OPTIONAL DEBUG
+                    # use this line to debug (and be spammed with red messages about exploding and vanishing gradients):
+                    # monitor_gradient_norms(gradient_norms)
+                    
+                    if self.distributed:
+                        # Sum the losses across all processes
+                        dist.all_reduce(total_loss, op=dist.ReduceOp.SUM)
+                        total_loss /= self.world_size
+                    total_train_loss += total_loss.item()
 
-                progress_bar.set_postfix({'loss': f'{total_train_loss / (batch_idx + 1):.4f}'})
-                with open(f"{self.text_logs_folder}/log_details_train.txt", "a", encoding='utf-8') as f:
-                    f.write(f"Epoch {epoch + 1}/{self.epochs}, Batch: {batch_idx + 1}/{len(self.train_dataloader)}, Loss: {total_loss.item():.4f}\n")
-    
-            avg_train_loss = total_train_loss / len(self.train_dataloader)
-            training_losses.append(avg_train_loss)
-            self._plot_gradient_norms(gradient_norms, epoch)
+                    progress_bar.set_postfix({'loss': f'{total_train_loss / (batch_idx + 1):.4f}'})
+                    with open(f"{self.text_logs_folder}/log_details_train.txt", "a", encoding='utf-8') as f:
+                        f.write(f"Epoch {epoch + 1}/{self.epochs}, Batch: {batch_idx + 1}/{len(self.train_dataloader)}, Loss: {total_loss.item():.4f}\n")
 
-            # Validation
-            model.eval()    
-            print("Running Validation...")
-            min_flag = False
-            val_total_loss = 0
-            with torch.no_grad():
-                for images, texts in self.val_dataloader:
-                    images, texts = images.to(self.device), texts.to(self.device)
-                    images = model.encode_image(images)
-                    texts = model.encode_text(texts)
-                    val_total_loss += ContrastiveLoss(images, texts).item()
+            # Once per epoch
+            if self.rank==0:
+                avg_train_loss = total_train_loss / (len(self.train_dataloader) / self.world_size)
+                training_losses.append(avg_train_loss)
+                self._plot_gradient_norms(gradient_norms, epoch)
 
-            avg_val_loss = val_total_loss / len(self.val_dataloader)
-            validation_losses.append(avg_val_loss)
+                # Validation
+                model.eval()    
+                print("Running Validation...")
+                min_flag = False
+                val_total_loss = 0
+                with torch.no_grad():
+                    for images, texts in self.val_dataloader:
+                        images, texts = images.to(self.device), texts.to(self.device)
+                        images = model.encode_image(images)
+                        texts = model.encode_text(texts)
+                        val_total_loss += ContrastiveLoss(images, texts).item()
 
-            if epoch==0:
-                min_val_loss = avg_val_loss
-            else:
-                if avg_val_loss <= min_val_loss:
+                avg_val_loss = val_total_loss / len(self.val_dataloader)
+                validation_losses.append(avg_val_loss)
+
+                if epoch==0:
                     min_val_loss = avg_val_loss
-                    min_flag = True
-            
-            if epoch >= 1:
-                # Plot losses
-                plt.figure(figsize=(10, 5))
-                plt.plot(range(1, epoch + 2), training_losses, label='Training Loss')
-                plt.plot(range(1, epoch + 2), validation_losses, label='Validation Loss')
-                plt.xlabel('Epochs')
-                plt.ylabel('Loss')
-                plt.title('Training and Validation Loss Over Epochs')
-                plt.legend()
-                plt.savefig(os.path.join(self.output_path, self.plots_folder, f"loss_plot_epoch_{epoch + 1}.png"))
-                plt.close()        
-            
-            
-            print(Fore.YELLOW + "======================== STATS =============================")
-            print(Fore.YELLOW + f"Epoch {epoch + 1}/{self.epochs} - Training Loss: {avg_train_loss:.4f}, Validation Loss: {avg_val_loss:.4f}")
-            print(Fore.YELLOW + "============================================================" + Style.RESET_ALL)
-            
-            with open(os.path.join(self.output_path, self.text_logs_folder, "log_training.txt", "a", encoding='utf-8')) as f:
-                f.write("======================== STATS =============================\n")
-                f.write(f"Epoch {epoch + 1}/{self.epochs} - Training Loss: {avg_train_loss:.4f}, Validation Loss: {avg_val_loss:.4f}\n")
-                f.write("============================================================\n")
+                else:
+                    if avg_val_loss <= min_val_loss:
+                        min_val_loss = avg_val_loss
+                        min_flag = True
+                
+                if epoch >= 1:
+                    # Plot losses
+                    plt.figure(figsize=(10, 5))
+                    plt.plot(range(1, epoch + 2), training_losses, label='Training Loss')
+                    plt.plot(range(1, epoch + 2), validation_losses, label='Validation Loss')
+                    plt.xlabel('Epochs')
+                    plt.ylabel('Loss')
+                    plt.title('Training and Validation Loss Over Epochs')
+                    plt.legend()
+                    plt.savefig(os.path.join(self.output_path, self.plots_folder, f"loss_plot_epoch_{epoch + 1}.png"))
+                    plt.close()        
+                
+                
+                print(Fore.YELLOW + "======================== STATS =============================")
+                print(Fore.YELLOW + f"Epoch {epoch + 1}/{self.epochs} - Training Loss: {avg_train_loss:.4f}, Validation Loss: {avg_val_loss:.4f}")
+                print(Fore.YELLOW + "============================================================" + Style.RESET_ALL)
+                
+                with open(os.path.join(self.output_path, self.text_logs_folder, "log_training.txt", "a", encoding='utf-8')) as f:
+                    f.write("======================== STATS =============================\n")
+                    f.write(f"Epoch {epoch + 1}/{self.epochs} - Training Loss: {avg_train_loss:.4f}, Validation Loss: {avg_val_loss:.4f}\n")
+                    f.write("============================================================\n")
 
-            # Save model every epoch unless only saving min
-            if (self.save_min_loss == False or (self.save_min_loss == True and min_flag == True)):
-                output_path = os.path.join(self.output_path, self.ft_checkpoints_folder, f"{epoch+1}.pt")
-                torch.save(model.state_dict(), output_path)      
-                print(Fore.GREEN + f"Checkpoint saved at: {output_path}" + Style.RESET_ALL)
-            
+                # Save model every epoch unless only saving min
+                if (self.save_min_loss == False or (self.save_min_loss == True and min_flag == True)):
+                    output_path = os.path.join(self.output_path, self.ft_checkpoints_folder, f"{epoch+1}.pt")
+                    torch.save(model.state_dict(), output_path)      
+                    print(Fore.GREEN + f"Checkpoint saved at: {output_path}" + Style.RESET_ALL)
+
+        # Destroy process once all epochs have finished
         if self.distributed:
             dist.destroy_process_group()
 
