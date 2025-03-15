@@ -76,15 +76,15 @@ def finetune(rank:int, distributed:bool, splits_path:str, corrupted_path:str, ch
     output_path = output_path
     save_min_loss = save_min_loss
 
-    # Save training plots with matplotlib
+    # Where to save matplotlib plots
     plots_folder = kwargs.get('plots_folder', 'ft-plots')
-    os.makedirs(plots_folder, exist_ok=True)
-    # Save model .pt files
+    os.mkdir(os.path.join(output_path, plots_folder))
+    # Where to save model .pt files
     ft_checkpoints_folder = kwargs.get('ft_checkpoints_folder', 'ft-checkpoints')
-    os.makedirs(ft_checkpoints_folder, exist_ok=True)
-    # Save verbose text / training logs
+    os.mkdir(os.path.join(output_path, ft_checkpoints_folder))
+    # Where to save verbose text / training logs
     text_logs_folder = kwargs.get('text_logs_folder', 'ft-logs')
-    os.makedirs(text_logs_folder, exist_ok=True)
+    os.mkdir(os.path.join(output_path, text_logs_folder))
     
     #device = "cuda" if torch.cuda.is_available() else "cpu"
     model, preprocess = longclip.load(checkpoint_input_path, device=rank)
@@ -117,7 +117,7 @@ def finetune(rank:int, distributed:bool, splits_path:str, corrupted_path:str, ch
         train_sampler = DistributedSampler(train_dataset, num_replicas=world_size, rank=rank)
         train_dataloader = DataLoader(train_dataset, sampler=train_sampler, batch_size=batch_size, shuffle=True)
 
-    optimizer = AdaBelief(model.parameters(), lr=learning_rate, eps=1e-16, betas=(0.9, 0.995), weight_decay=1e-3, weight_decouple=False, rectify=True, print_change_log = False)
+    optimizer = AdaBelief(model.parameters(), lr=learning_rate, eps=1e-16, betas=(0.9, 0.995), weight_decay=1e-3, weight_decouple=False, rectify=True, print_change_log=False)
     scheduler = OneCycleLR(optimizer, max_lr=learning_rate, total_steps=total_steps, pct_start=0.1, anneal_strategy='linear')
     
     # Perform the actual finetuning
@@ -257,7 +257,7 @@ def _perform_ft(rank:int, distributed:bool, model:longclip, train_dataloader:Dat
                 total_train_loss += total_loss.item()
 
                 progress_bar.set_postfix({'loss': f'{total_train_loss / (batch_idx + 1):.4f}'})
-                with open(f"{text_logs_folder}/log_details_train.txt", "a", encoding='utf-8') as f:
+                with open(os.path.join(output_path, text_logs_folder, "log_details_train.txt"), "a", encoding='utf-8') as f:
                     f.write(f"Epoch {epoch + 1}/{epochs}, Batch: {batch_idx + 1}/{len(train_dataloader)}, Loss: {total_loss.item():.4f}\n")
 
         # Once per epoch

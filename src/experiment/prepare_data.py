@@ -81,7 +81,7 @@ def process_data(metadata_path:str, images_path:str, validate_data:bool=False)->
     val_size = int(0.1 * len(metadata))
 
     train_split = metadata[0: train_size]
-    val_split = metadata[train_size: val_size]
+    val_split = metadata[train_size: train_size + val_size]
     test_split = metadata[train_size + val_size:]
 
     return train_split, val_split, test_split
