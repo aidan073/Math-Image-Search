@@ -2,7 +2,7 @@ __pycache__/
 .vscode/
 *.pyc
 
-venv/
+math_venv/
 splits/
 missing_or_corrupted.txt
 longclip-L.pt
