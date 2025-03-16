@@ -90,10 +90,8 @@ def finetune(rank:int, distributed:bool, splits_path:str, corrupted_path:str, ch
     model, preprocess = longclip.load(checkpoint_input_path, device=rank)
 
     # Gather corrupted ids
-    corrupted_ids = []
     with open(corrupted_path, 'r', encoding='utf-8') as f:
-        corrupted_ids = f.readlines()
-    corrupted_ids = set(corrupted_ids)
+        corrupted_ids = {line.strip() for line in f}
 
     # Get datasets 
     train_split = np.load(os.path.join(splits_path, "train_split.npy"))
@@ -121,7 +119,7 @@ def finetune(rank:int, distributed:bool, splits_path:str, corrupted_path:str, ch
     scheduler = OneCycleLR(optimizer, max_lr=learning_rate, total_steps=total_steps, pct_start=0.1, anneal_strategy='linear')
     
     # Perform the actual finetuning
-    _perform_ft(rank, distributed, train_dataloader, val_dataloader, epochs, batch_size, scaler, scheduler, optimizer, world_size, text_logs_folder, plots_folder, ft_checkpoints_folder, save_min_loss)
+    _perform_ft(rank, distributed, model, train_dataloader, val_dataloader, epochs, batch_size, scaler, scheduler, optimizer, world_size, text_logs_folder, plots_folder, ft_checkpoints_folder, save_min_loss)
 
     if distributed:
         dist.destroy_process_group()
@@ -230,7 +228,10 @@ def _perform_ft(rank:int, distributed:bool, model:longclip, train_dataloader:Dat
             
             optimizer.zero_grad()
             with torch.autocast(device_type='cuda'):
-                sim_i2t, sim_t2i = model(images, texts)
+                if(distributed):
+                    sim_i2t, sim_t2i = model.distributed_forward(images, texts, rank)
+                else:
+                    sim_i2t, sim_t2i = model(images, texts)
                 total_loss = ContrastiveLoss(sim_i2t, sim_t2i, rank)
 
             scaler.scale(total_loss).backward()
