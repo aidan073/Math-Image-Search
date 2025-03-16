@@ -1,4 +1,4 @@
-from submodules.Long_CLIP.model import longclip
+from Long_CLIP.model import longclip
 from src.experiment.prepare_data import process_data
 from src.experiment.finetuner import finetune
 

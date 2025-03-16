@@ -1,3 +1,3 @@
-[submodule "Long-CLIP"]
-	path = Long-CLIP
+[submodule "Long_CLIP"]
+	path = Long_CLIP
 	url = https://github.com/aidan073/Long-CLIP.git

@@ -1,4 +1,4 @@
-from submodules.Long_CLIP.model import longclip
+from Long_CLIP.model import longclip
 
 import torch
 import os
