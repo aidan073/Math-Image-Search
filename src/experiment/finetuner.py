@@ -5,6 +5,7 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 import torch.distributed as dist
+import torch.nn.functional as F
 from PIL import Image
 from tqdm import tqdm
 from colorama import Fore, Style
@@ -33,23 +34,6 @@ class MathDataset(Dataset):
         text = longclip.tokenize(caption, truncate=True) # Tokenize the caption
 
         return image, text.squeeze(0) # Remove the extra dimension
-
-class ContrastiveLoss(torch.nn.Module):
-    def __init__(self, temperature=0.07):
-        super(finetune.ContrastiveLoss, self).__init__()
-        self.temperature = temperature
-        self.criterion = torch.nn.functional.cross_entropy()
-
-    def forward(self, sim_i2t, sim_t2i, rank):
-        # Calculate loss as the mean of the two cross-entropy losses
-        bs = sim_i2t.size(0)
-        targets = torch.linspace(rank * bs,rank * bs + bs - 1, bs, dtype=torch.long).to(sim_i2t.device)
-
-        loss_img = self.criterion(sim_i2t, targets, label_smoothing=0.1)
-        loss_txt = self.criterion(sim_t2i, targets, label_smoothing=0.1)
-
-        return (loss_img + loss_txt) / 2
-
 
 
 def finetune(rank:int, distributed:bool, splits_path:str, corrupted_path:str, checkpoint_input_path:str, output_path:str, epochs:int=6, batch_size:int=30, world_size:int=1, save_min_loss:bool=False, **kwargs):
@@ -119,7 +103,7 @@ def finetune(rank:int, distributed:bool, splits_path:str, corrupted_path:str, ch
     scheduler = OneCycleLR(optimizer, max_lr=learning_rate, total_steps=total_steps, pct_start=0.1, anneal_strategy='linear')
     
     # Perform the actual finetuning
-    _perform_ft(rank, distributed, model, train_dataloader, val_dataloader, epochs, batch_size, scaler, scheduler, optimizer, world_size, text_logs_folder, plots_folder, ft_checkpoints_folder, save_min_loss)
+    _perform_ft(rank, distributed, model, train_dataloader, val_dataloader, output_path, epochs, batch_size, scaler, scheduler, optimizer, world_size, text_logs_folder, plots_folder, ft_checkpoints_folder, save_min_loss)
 
     if distributed:
         dist.destroy_process_group()
@@ -199,9 +183,9 @@ def _plot_gradient_norms(gradient_norms, epoch, output_path, plots_folder, use_l
     
     plt.close()
 
-def _perform_ft(rank:int, distributed:bool, model:longclip, train_dataloader:DataLoader, val_dataloader:DataLoader, epochs:int, batch_size:int, scaler:GradScaler, scheduler:torch.optim.lr_scheduler, optimizer, world_size:int, text_logs_folder:str, plots_folder:str, ft_checkpoints_folder:str, save_min_loss:bool):
+def _perform_ft(rank:int, distributed:bool, model:longclip, train_dataloader:DataLoader, val_dataloader:DataLoader, output_path:str, epochs:int, batch_size:int, scaler:GradScaler, scheduler:torch.optim.lr_scheduler, optimizer, world_size:int, text_logs_folder:str, plots_folder:str, ft_checkpoints_folder:str, save_min_loss:bool):
     """
-    Performs the actual fine-tune run. Outputs finetuned checkpoints in designated directory, as well as additional logs
+    Performs the actual fine-tune run. Outputs finetuned checkpoints in designated directory, as well as additional logs.
     """
 
     unfreeze_all = True
@@ -226,18 +210,17 @@ def _perform_ft(rank:int, distributed:bool, model:longclip, train_dataloader:Dat
         for batch_idx, (images, texts) in progress_bar:
             images, texts = images.to(rank), texts.to(rank)
             
-            optimizer.zero_grad()
             with torch.autocast(device_type='cuda'):
                 if(distributed):
-                    sim_i2t, sim_t2i = model.distributed_forward(images, texts, rank)
+                    total_loss = model.distributed_forward(images, texts, rank)
                 else:
-                    sim_i2t, sim_t2i = model(images, texts)
-                total_loss = ContrastiveLoss(sim_i2t, sim_t2i, rank)
+                    total_loss = model(images, texts)
 
             scaler.scale(total_loss).backward()
             scaler.step(optimizer)
-            scheduler.step()
             scaler.update()
+            optimizer.zero_grad()
+            scheduler.step()
             
             # Once per batch
             if rank==0:
@@ -275,9 +258,8 @@ def _perform_ft(rank:int, distributed:bool, model:longclip, train_dataloader:Dat
             with torch.no_grad():
                 for images, texts in val_dataloader:
                     images, texts = images.to(rank), texts.to(rank)
-                    images = model.encode_image(images)
-                    texts = model.encode_text(texts)
-                    val_total_loss += ContrastiveLoss(images, texts).item()
+                    loss = model(images, texts)
+                    val_total_loss += loss
 
             avg_val_loss = val_total_loss / len(val_dataloader)
             validation_losses.append(avg_val_loss)
@@ -305,7 +287,7 @@ def _perform_ft(rank:int, distributed:bool, model:longclip, train_dataloader:Dat
             print(Fore.YELLOW + f"Epoch {epoch + 1}/{epochs} - Training Loss: {avg_train_loss:.4f}, Validation Loss: {avg_val_loss:.4f}")
             print(Fore.YELLOW + "============================================================" + Style.RESET_ALL)
             
-            with open(os.path.join(output_path, text_logs_folder, "log_training.txt", "a", encoding='utf-8')) as f:
+            with open(os.path.join(output_path, text_logs_folder, "log_training.txt"), "a", encoding='utf-8') as f:
                 f.write("======================== STATS =============================\n")
                 f.write(f"Epoch {epoch + 1}/{epochs} - Training Loss: {avg_train_loss:.4f}, Validation Loss: {avg_val_loss:.4f}\n")
                 f.write("============================================================\n")
