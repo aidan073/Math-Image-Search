@@ -209,7 +209,6 @@ def _perform_ft(rank:int, distributed:bool, model:longclip, train_dataloader:Dat
 
         for batch_idx, (images, texts) in progress_bar:
             images, texts = images.to(rank), texts.to(rank)
-            
             with torch.autocast(device_type='cuda'):
                 if(distributed):
                     total_loss = model.distributed_forward(images, texts, rank)
@@ -217,6 +216,13 @@ def _perform_ft(rank:int, distributed:bool, model:longclip, train_dataloader:Dat
                     total_loss = model(images, texts)
 
             scaler.scale(total_loss).backward()
+            if rank==0:
+                # Store gradient norms for plot
+                for name, parameter in model.named_parameters():
+                    if parameter.grad is not None:
+                        grad_norm = parameter.grad.norm().item()
+                        gradient_norms.setdefault(name, []).append(grad_norm)
+
             scaler.step(optimizer)
             scaler.update()
             optimizer.zero_grad()
@@ -224,12 +230,6 @@ def _perform_ft(rank:int, distributed:bool, model:longclip, train_dataloader:Dat
             
             # Once per batch
             if rank==0:
-                # Store gradient norms for plot
-                for name, parameter in model.named_parameters():
-                    if parameter.grad is not None:
-                        grad_norm = parameter.grad.norm().item()
-                        gradient_norms.setdefault(name, []).append(grad_norm)
-            
                 # OPTIONAL DEBUG
                 # use this line to debug (and be spammed with red messages about exploding and vanishing gradients):
                 # monitor_gradient_norms(gradient_norms)
@@ -259,7 +259,7 @@ def _perform_ft(rank:int, distributed:bool, model:longclip, train_dataloader:Dat
                 for images, texts in val_dataloader:
                     images, texts = images.to(rank), texts.to(rank)
                     loss = model(images, texts)
-                    val_total_loss += loss
+                    val_total_loss += loss.item()
 
             avg_val_loss = val_total_loss / len(val_dataloader)
             validation_losses.append(avg_val_loss)
@@ -294,6 +294,6 @@ def _perform_ft(rank:int, distributed:bool, model:longclip, train_dataloader:Dat
 
             # Save model every epoch unless only saving min
             if (save_min_loss == False or (save_min_loss == True and min_flag == True)):
-                output_path = os.path.join(output_path, ft_checkpoints_folder, f"{epoch+1}.pt")
-                torch.save(model.state_dict(), output_path)      
-                print(Fore.GREEN + f"Checkpoint saved at: {output_path}" + Style.RESET_ALL)
+                save_checkpoint_path = os.path.join(output_path, ft_checkpoints_folder, f"{epoch+1}.pt")
+                torch.save(model.state_dict(), save_checkpoint_path)      
+                print(Fore.GREEN + f"Checkpoint saved at: {save_checkpoint_path}" + Style.RESET_ALL)
