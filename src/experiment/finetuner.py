@@ -60,17 +60,15 @@ def finetune(rank:int, distributed:bool, splits_path:str, corrupted_path:str, ch
     output_path = output_path
     save_min_loss = save_min_loss
 
-    # Where to save matplotlib plots
+    # Create directories for logs and checkpoints
     plots_folder = kwargs.get('plots_folder', 'ft-plots')
-    os.mkdir(os.path.join(output_path, plots_folder))
-    # Where to save model .pt files
     ft_checkpoints_folder = kwargs.get('ft_checkpoints_folder', 'ft-checkpoints')
-    os.mkdir(os.path.join(output_path, ft_checkpoints_folder))
-    # Where to save verbose text / training logs
     text_logs_folder = kwargs.get('text_logs_folder', 'ft-logs')
-    os.mkdir(os.path.join(output_path, text_logs_folder))
+    if not distributed or rank==0:
+        os.mkdir(os.path.join(output_path, plots_folder))
+        os.mkdir(os.path.join(output_path, ft_checkpoints_folder))
+        os.mkdir(os.path.join(output_path, text_logs_folder))
     
-    #device = "cuda" if torch.cuda.is_available() else "cpu"
     model, preprocess = longclip.load(checkpoint_input_path, device=rank)
 
     # Gather corrupted ids
@@ -96,8 +94,8 @@ def finetune(rank:int, distributed:bool, splits_path:str, corrupted_path:str, ch
         model = DDP(model, device_ids=[rank]).module
 
         # Ensures each GPU sees a different batch shard
-        train_sampler = DistributedSampler(train_dataset, num_replicas=world_size, rank=rank)
-        train_dataloader = DataLoader(train_dataset, sampler=train_sampler, batch_size=batch_size, shuffle=True)
+        train_sampler = DistributedSampler(train_dataset, num_replicas=world_size, rank=rank, shuffle=True)
+        train_dataloader = DataLoader(train_dataset, sampler=train_sampler, batch_size=batch_size)
 
     optimizer = AdaBelief(model.parameters(), lr=learning_rate, eps=1e-16, betas=(0.9, 0.995), weight_decay=1e-3, weight_decouple=False, rectify=True, print_change_log=False)
     scheduler = OneCycleLR(optimizer, max_lr=learning_rate, total_steps=total_steps, pct_start=0.1, anneal_strategy='linear')
