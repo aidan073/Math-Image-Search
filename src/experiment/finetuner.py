@@ -226,16 +226,17 @@ def _perform_ft(rank:int, distributed:bool, model:longclip, train_dataloader:Dat
             optimizer.zero_grad()
             scheduler.step()
             
+            if distributed:
+                # Sum the losses across all processes
+                dist.all_reduce(total_loss, op=dist.ReduceOp.SUM)
+                total_loss /= world_size
+                
             # Once per batch
             if rank==0:
                 # OPTIONAL DEBUG
                 # use this line to debug (and be spammed with red messages about exploding and vanishing gradients):
                 # monitor_gradient_norms(gradient_norms)
                 
-                if distributed:
-                    # Sum the losses across all processes
-                    dist.all_reduce(total_loss, op=dist.ReduceOp.SUM)
-                    total_loss /= world_size
                 total_train_loss += total_loss.item()
 
                 progress_bar.set_postfix({'loss': f'{total_train_loss / (batch_idx + 1):.4f}'})
