@@ -6,3 +6,5 @@ math_venv/
 splits/
 missing_or_corrupted.txt
 longclip-L.pt
+test/
+testD/
