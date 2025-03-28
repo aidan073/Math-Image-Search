@@ -31,10 +31,12 @@ Or you can run each pipe individually in the following order:
 python -m src.pipeline --pipe data -m <metadata_path> -i <images_path> -s <save_splits_path>
 ```
 ```
-python -m src.pipeline --pipe finetune -s <splits_path> -x <corrupted_files_path> -c <checkpoint_input_path> -o <checkpoint_output_path> [--distributed]
+python -m src.pipeline --pipe finetune -s <splits_path> -x <corrupted_files_path> -c <checkpoint_input_path> -o <checkpoint_output_path> [--distributed -b <batch_size>]
 ```
 ```
-python -m src.pipeline --pipe evaluate (args TBD)
+python -m src.pipeline --pipe evaluate -c <checkpoint_input_path> -x <corrupted_files_path> -t <test_split_path> [--return_mean -e <results_output_path> -qi <qrel_input_path> -qo <qrel_output_path> -z <dataset_divides>]
+
+example: python -m src.pipeline --pipe evaluate -c longclip-L.pt -x missing_or_corrupted.txt -t splits/test_split.npy -e search_test_1.json -qi qrel_test_1.json -z 3
 ```
 
 

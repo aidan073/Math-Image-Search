@@ -22,13 +22,13 @@ def parse_args():
 
 def longclip_search(checkpoint_path:str, test_split_path:dict, output_path:str=None, missing_or_corrupted:str=None, test_split_splits:int=1)->Run:
     """
-    Use Long-CLIP checkpoint for text to image retrieval
+    Use Long-CLIP checkpoint for text to image retrieval.
 
     Args:
-        checkpoint_path: Path to Long-CLIP checkpoint file
-        test_split_path: Path to test split json file
-        output_path (optional): Save run to this path
-        missing_or_corrupted (optional): Path to .txt file in which each row contains the sample id of a corrupted image
+        checkpoint_path: Path to Long-CLIP checkpoint file.
+        test_split_path: Path to test split json file.
+        output_path (optional): Save run to this path.
+        missing_or_corrupted (optional): Set of str ids that are corrupted, or Path to .txt file in which each row contains the sample id of a corrupted image.
         test_split_splits (optional): Number of splits to make of the test_split. Defaults to 1, but if the test_split is very large, then splitting it up may be necessary to avoid memory errors.
 
     Returns:
@@ -36,6 +36,7 @@ def longclip_search(checkpoint_path:str, test_split_path:dict, output_path:str=N
     """
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model, preprocess = load(checkpoint_path, device=device)
+    model.eval()
 
     ids, texts, images = _load_test(test_split_path, device, tokenize, preprocess, missing_or_corrupted)
 
@@ -44,29 +45,35 @@ def longclip_search(checkpoint_path:str, test_split_path:dict, output_path:str=N
             texts_batches = texts.unsqueeze(0)
             images_batches = images.unsqueeze(0)
         else:
-            texts_batches = torch.split(texts, test_split_splits)
-            images_batches = torch.split(images, test_split_splits)
+            split_size = len(texts) // test_split_splits
+            texts_batches = torch.split(texts, split_size)
+            images_batches = torch.split(images, split_size)
         
         text_embeddings_list = []
         image_embeddings_list = []
-        for texts, images in zip(texts_batches, images_batches):
+        zipped_input = zip(texts_batches, images_batches)
+        for texts, images in tqdm(zipped_input, "Encoding batches", total=len(texts_batches)):
             text_embeddings_list.append(model.encode_text(texts))
             image_embeddings_list.append(model.encode_image(images))
 
         text_embeddings = torch.cat(text_embeddings_list, dim=0)
         image_embeddings = torch.cat(image_embeddings_list, dim=0)
     
-    text_embeddings = text_embeddings / text_embeddings.norm(dim=1, keepdim=True) # TODO: double check dim=1 is correct
+    text_embeddings = text_embeddings / text_embeddings.norm(dim=1, keepdim=True) # TODO: Long-CLIP authors don't norm during inference. Find out if there is a reason.
     image_embeddings = image_embeddings / image_embeddings.norm(dim=1, keepdim=True)
     t2i_sim = text_embeddings @ image_embeddings.T
 
-    return _construct_run(ids, t2i_sim, "LongCLIP_retrieval", output_path)
+    return _construct_run(ids, t2i_sim, "longclip_retrieval", output_path)
 
-def _load_test(test_split_path:str, device:str, tokenize:Callable[[Union[str, list[str]]], torch.Tensor], preprocess:torchvision.transforms.Compose, missing_or_corrupted:str)->tuple[list, list, list]:
+def _load_test(test_split_path:str, device:str, tokenize:Callable[[Union[str, list[str]]], torch.Tensor], preprocess:torchvision.transforms.Compose, missing_or_corrupted:Union[set[str], str])->tuple[list, list, list]:
+    
     mc_set = set()
     if missing_or_corrupted:
-        with open(missing_or_corrupted, "r", encoding='utf-8') as f:
-            mc_set.update(line.strip() for line in f)
+        if isinstance(missing_or_corrupted, set):
+            mc_set = missing_or_corrupted
+        else:
+            with open(missing_or_corrupted, "r", encoding='utf-8') as f:
+                mc_set.update(line.strip() for line in f)
     
     test_split = np.load(test_split_path)
     ids = []
@@ -75,7 +82,7 @@ def _load_test(test_split_path:str, device:str, tokenize:Callable[[Union[str, li
     for sample in tqdm(test_split, "Loading test samples", total=len(test_split)):
         if sample[0] in mc_set: # If this image is corrupted, skip
             continue
-        ids.append(int(sample[0]))
+        ids.append(sample[0])
         texts.append(tokenize(sample[1], truncate=True).squeeze(0).to(device))
         images.append(preprocess(Image.open(sample[2])).to(device))
 
@@ -84,14 +91,14 @@ def _load_test(test_split_path:str, device:str, tokenize:Callable[[Union[str, li
 
     return ids, texts, images
 
-def _construct_run(ids:list, similarities:list, run_name:str, output_path:str=None, top_n:int=100):
+def _construct_run(ids:list[str], similarities:list, run_name:str, output_path:str=None, top_n:int=100):
     run_dict = {}
     for idx in range(similarities.size(dim=0)):
         top_matching_indices = similarities[idx, :].argsort(dim=0, descending=True)[:top_n]
         values = similarities[idx, :][top_matching_indices]
-        run_dict[str(ids[idx])] = {}
+        run_dict[ids[idx]] = {}
         for key_idx, value in zip(top_matching_indices, values):
-            run_dict[str(ids[idx])][str(ids[key_idx])] = value.item()
+            run_dict[ids[idx]][ids[key_idx]] = value.item()
     run = Run(run_dict, run_name)
     if output_path:
         run.save(output_path)
