@@ -6,4 +6,5 @@ math_venv/
 splits/
 missing_or_corrupted.txt
 longclip-L.pt
-testing files/
+testing_files/
+ft-2GPU-100BS

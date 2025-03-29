@@ -63,7 +63,7 @@ def main():
                 os.environ["MASTER_PORT"] = "12354"
                 world_size = torch.cuda.device_count()
                 assert world_size >= 2, f"Distributed requires at least 2 GPUs to run, but got {world_size}"
-                mp.spawn(finetune, args=(args.distributed, args.splits_path, args.corrupted, args.c_input_path, args.c_output_path, 6, args.batch_size, world_size), nprocs=world_size, join=True)
+                mp.spawn(finetune, args=(args.distributed, args.splits_path, args.corrupted, args.c_input_path, args.c_output_path, 15, args.batch_size, world_size), nprocs=world_size, join=True)
             else:
                 finetune(0, args.distributed, args.splits_path, args.corrupted, args.c_input_path, args.c_output_path, batch_size=args.batch_size)
             

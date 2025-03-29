@@ -1,7 +1,8 @@
 from Long_CLIP.model import longclip
 
-import torch
 import os
+import math
+import torch
 import numpy as np
 import matplotlib.pyplot as plt
 import torch.distributed as dist
@@ -36,7 +37,7 @@ class MathDataset(Dataset):
         return image, text.squeeze(0) # Remove the extra dimension
 
 
-def finetune(rank:int, distributed:bool, splits_path:str, corrupted_path:str, checkpoint_input_path:str, output_path:str, epochs:int=6, batch_size:int=30, world_size:int=1, save_min_loss:bool=False, **kwargs):
+def finetune(rank:int, distributed:bool, splits_path:str, corrupted_path:str, checkpoint_input_path:str, output_path:str, epochs:int=15, batch_size:int=30, world_size:int=1, save_min_loss:bool=False, **kwargs):
     """
     All inclusive function to finetune longclip checkpoints
 
@@ -53,7 +54,7 @@ def finetune(rank:int, distributed:bool, splits_path:str, corrupted_path:str, ch
     ### Config ###
     epochs = epochs
     batch_size = batch_size
-    learning_rate = 1e-7
+    learning_rate = 5e-7
     scaler = GradScaler()
     distributed = distributed
     checkpoint_input_path = checkpoint_input_path
@@ -86,7 +87,7 @@ def finetune(rank:int, distributed:bool, splits_path:str, corrupted_path:str, ch
     total_steps = (len(train_dataloader)) * epochs
     # distributed setup
     if distributed:
-        total_steps = total_steps // world_size # simulating batch_size of batch_size*world_size, so you need less steps
+        total_steps = math.ceil(total_steps / world_size) # simulating batch_size of batch_size*world_size, so you need less steps
         dist.init_process_group("nccl", rank=rank, world_size=world_size)
         
         # Move model to current GPU
@@ -245,7 +246,7 @@ def _perform_ft(rank:int, distributed:bool, model:longclip, train_dataloader:Dat
 
         # Once per epoch
         if rank==0:
-            avg_train_loss = total_train_loss / (len(train_dataloader) / world_size)
+            avg_train_loss = total_train_loss / len(train_dataloader)
             training_losses.append(avg_train_loss)
             _plot_gradient_norms(gradient_norms, epoch, output_path, plots_folder)
 
