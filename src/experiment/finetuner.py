@@ -84,10 +84,8 @@ def finetune(rank:int, distributed:bool, splits_path:str, corrupted_path:str, ch
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True)
 
-    total_steps = (len(train_dataloader)) * epochs
     # distributed setup
     if distributed:
-        total_steps = math.ceil(total_steps / world_size) # simulating batch_size of batch_size*world_size, so you need less steps
         dist.init_process_group("nccl", rank=rank, world_size=world_size)
         
         # Move model to current GPU
@@ -98,6 +96,7 @@ def finetune(rank:int, distributed:bool, splits_path:str, corrupted_path:str, ch
         train_sampler = DistributedSampler(train_dataset, num_replicas=world_size, rank=rank, shuffle=True)
         train_dataloader = DataLoader(train_dataset, sampler=train_sampler, batch_size=batch_size)
 
+    total_steps = len(train_dataloader) * epochs
     optimizer = AdaBelief(model.parameters(), lr=learning_rate, eps=1e-16, betas=(0.9, 0.995), weight_decay=1e-3, weight_decouple=False, rectify=True, print_change_log=False)
     scheduler = OneCycleLR(optimizer, max_lr=learning_rate, total_steps=total_steps, pct_start=0.1, anneal_strategy='linear')
     
