@@ -54,7 +54,7 @@ def finetune(rank:int, distributed:bool, splits_path:str, corrupted_path:str, ch
     ### Config ###
     epochs = epochs
     batch_size = batch_size
-    learning_rate = 5e-7
+    learning_rate = 1e-6
     scaler = GradScaler()
     distributed = distributed
     checkpoint_input_path = checkpoint_input_path
@@ -98,7 +98,7 @@ def finetune(rank:int, distributed:bool, splits_path:str, corrupted_path:str, ch
 
     total_steps = len(train_dataloader) * epochs
     optimizer = AdaBelief(model.parameters(), lr=learning_rate, eps=1e-16, betas=(0.9, 0.995), weight_decay=1e-3, weight_decouple=False, rectify=True, print_change_log=False)
-    scheduler = OneCycleLR(optimizer, max_lr=learning_rate, total_steps=total_steps, pct_start=0.1, anneal_strategy='linear')
+    scheduler = OneCycleLR(optimizer, max_lr=learning_rate, total_steps=total_steps, pct_start=0.2, anneal_strategy='cos')
     
     # Perform the actual finetuning
     _perform_ft(rank, distributed, model, train_dataloader, val_dataloader, output_path, epochs, batch_size, scaler, scheduler, optimizer, world_size, text_logs_folder, plots_folder, ft_checkpoints_folder, save_min_loss)

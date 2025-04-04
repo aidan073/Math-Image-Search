@@ -7,5 +7,3 @@ splits/
 missing_or_corrupted.txt
 longclip-L.pt
 testing_files/
-ft-2GPU-100BS
-ft-1GPU-100BS
