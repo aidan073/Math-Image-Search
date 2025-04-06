@@ -10,7 +10,7 @@ import numpy as np
 
 def get_args():
     parser = argparse.ArgumentParser(description="Full experiment pipeline. Data processing, finetuning, and evaluation.")
-    parser.add_argument('--pipe', '-p', type=str, choices=['data', 'finetune', 'evaluate', 'complete'], help="Which part of pipeline to run. Options are: data, finetune, evaluate, complete.")
+    # parser.add_argument('--pipe', '-p', type=str, choices=['data', 'finetune', 'evaluate', 'complete'], help="Which part of pipeline to run. Options are: data, finetune, evaluate, complete.")
     
     subparsers = parser.add_subparsers(dest='pipe_type', required=True)
 
@@ -40,15 +40,18 @@ def get_args():
     evaluate_parser.add_argument('--eval_output_path', '-e', type=str, help="(Optional) .json path to save results in. If no path provided, results will simply be printed.")
     evaluate_parser.add_argument('--batch_size', '-b', type=int, default=100, help="Max number of samples per batch during encoding. Make this larger to speed up encoding, or smaller to prevent out of memory errors.")
 
+    # complete parser (TBD)
+    complete_parser = subparsers.add_parser('complete', help='Run complete experiment with pre-determined hyper-parameters.')
+
     return parser.parse_args()
 
 def main():
     args = get_args()
 
-    match args.pipe.lower():
+    match args.pipe_type.lower():
         case 'data':
             if not (args.metadata_path and args.images_path and args.splits_path):
-                raise argparse.ArgumentError(None, "Missing required arguments for data pipe. Usage: --pipe data -m <metadata_path> -i <images_path> -s <save_splits_path>.")
+                raise argparse.ArgumentError(None, "Missing required arguments for data pipe. Usage: data -m <metadata_path> -i <images_path> -s <save_splits_path>.")
             train_split, val_split, test_split = process_data(args.metadata_path, args.images_path, validate_data=True)
             if not os.path.exists(args.splits_path):
                 os.mkdir(args.splits_path)
@@ -61,7 +64,7 @@ def main():
 
         case 'finetune':
             if not (args.splits_path and args.corrupted and args.c_input_path and args.c_output_path):
-                raise argparse.ArgumentError(None, f"Missing required arguments for finetune pipe. Usage: --pipe finetune -s <splits_path> -x <corrupted_files_path> -c <checkpoint_input_path> -o <checkpoint_output_path>")
+                raise argparse.ArgumentError(None, f"Missing required arguments for finetune pipe. Usage: finetune -s <splits_path> -x <corrupted_files_path> -c <checkpoint_input_path> -o <checkpoint_output_path>")
             if os.path.exists(args.c_output_path):
                 raise FileExistsError(f"Designated output folder '{args.c_output_path}' already exists. Please delete it or provide a different output folder name for c_output_path.")
             os.mkdir(args.c_output_path)
@@ -77,12 +80,12 @@ def main():
         case 'evaluate':
             metrics = ['precision@1', 'mrr'] # Can modify desired metrics here. Reference Ranx library to get list of valid metric names.
             if not (args.c_input_path and args.test_split_path and args.corrupted):
-                raise argparse.ArgumentError(None, f"Missing required arguments for evaluation pipe. Usage: --pipe evaluation -c <Long-CLIP checkpoint path> -t <test_split_path> -x <corrupted_files_path>")
+                raise argparse.ArgumentError(None, f"Missing required arguments for evaluate pipe. Usage: evaluate -c <Long-CLIP checkpoint path> -t <test_split_path> -x <corrupted_files_path>")
             evaluate_model(args.c_input_path, args.test_split_path, args.corrupted, metrics, args.qrel_input_path, args.eval_output_path, args.qrel_output_path, args.return_mean, args.batch_size)
 
         case 'complete':
             if not (args.metadata_path and args.images_path):
-                raise argparse.ArgumentError(None, "Missing required arguments for complete pipe. Usage: --pipe complete -m <metadata_path> -i <images_path>")
+                raise argparse.ArgumentError(None, "Missing required arguments for complete pipe. Usage: complete -m <metadata_path> -i <images_path>")
             train_split, val_split, test_split = process_data(args.metadata_path, args.images_path, validate_data=True)
 
 if __name__ == "__main__":

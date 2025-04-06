@@ -26,7 +26,7 @@ def evaluate_model(checkpoint_path:str, test_split_path:str, missing_or_corrupte
             mc_set.update(line.strip() for line in f)
 
     # construct run and qrel
-    run = search.longclip_search(checkpoint_path, test_split_path, None, mc_set, test_split_splits)
+    run = search.full_search(checkpoint_path, test_split_path, None, mc_set, test_split_splits)
     if not qrel_input_path:
         qrel = _construct_qrel(test_split_path, mc_set, qrel_output_path)
     else:
