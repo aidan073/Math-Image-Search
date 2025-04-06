@@ -59,10 +59,10 @@ python -m src.pipeline --pipe finetune --splits_path splits -c longclip-L.pt -x 
 Assess model performance:
 
 ```
-python -m src.pipeline --pipe evaluate -c <checkpoint_input_path> -x <corrupted_files_path> -t <test_split_path> [--return_mean -e <results_output_path> -qi <qrel_input_path> -qo <qrel_output_path> -z <dataset_divides>]
+python -m src.pipeline --pipe evaluate -c <checkpoint_input_path> -x <corrupted_files_path> -t <test_split_path> [--return_mean -e <results_output_path> -qi <qrel_input_path> -qo <qrel_output_path> -b <batch_size>]
 ```
 
 Example:
 ```
-python -m src.pipeline --pipe evaluate -c longclip-L.pt -x missing_or_corrupted.txt -t splits/test_split.npy -e search_test_1.json -qi qrel_test_1.json -z 3
+python -m src.pipeline --pipe evaluate -c longclip-L.pt -x missing_or_corrupted.txt -t splits/test_split.npy -e search_test_1.json -qi qrel_test_1.json -b 1000
 ```
