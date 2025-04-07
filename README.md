@@ -26,7 +26,7 @@ pip install -r requirements.txt
 Run the entire process (all pipelines) with the same hyper-parameters used for the research:
 
 ```
-python -m src.pipeline --pipe complete [args TBD]
+python -m src.pipeline complete [args TBD]
 ```
 
 ### Individual Pipelines
@@ -35,34 +35,34 @@ python -m src.pipeline --pipe complete [args TBD]
 Process the dataset:
 
 ```
-python -m src.pipeline --pipe data -m <metadata_path> -i <images_path> -s <save_splits_path>
+python -m src.pipeline data -m <metadata_path> -i <images_path> -s <save_splits_path>
 ```
 
 Example:
 ```
-python -m src.pipeline --pipe data -m storage/MSE.tsv -i storage/MSE_Images -s splits
+python -m src.pipeline data -m storage/MSE.tsv -i storage/MSE_Images -s splits
 ```
 
 #### 2. Fine-tuning
 Finetune the model on the dataset:
 
 ```
-python -m src.pipeline --pipe finetune -s <splits_path> -x <corrupted_files_path> -c <checkpoint_input_path> -o <checkpoint_output_path> [--distributed -b <batch_size>]
+python -m src.pipeline finetune -s <splits_path> -x <corrupted_files_path> -c <checkpoint_input_path> -o <checkpoint_output_path> [--distributed -b <batch_size>]
 ```
 
 Example:
 ```
-python -m src.pipeline --pipe finetune --splits_path splits -c longclip-L.pt -x missing_or_corrupted.txt -d -b 70 -o finetuned-model
+python -m src.pipeline finetune --splits_path splits -c longclip-L.pt -x missing_or_corrupted.txt -d -b 70 -o finetuned-model
 ```
 
 #### 3. Evaluation
 Assess model performance:
 
 ```
-python -m src.pipeline --pipe evaluate -c <checkpoint_input_path> -x <corrupted_files_path> -t <test_split_path> [--return_mean -e <results_output_path> -qi <qrel_input_path> -qo <qrel_output_path> -b <batch_size>]
+python -m src.pipeline evaluate -c <checkpoint_input_path> -x <corrupted_files_path> -t <test_split_path> [--return_mean -e <results_output_path> -qi <qrel_input_path> -qo <qrel_output_path> -b <batch_size>]
 ```
 
 Example:
 ```
-python -m src.pipeline --pipe evaluate -c longclip-L.pt -x missing_or_corrupted.txt -t splits/test_split.npy -e search_test_1.json -qi qrel_test_1.json -b 1000
+python -m src.pipeline evaluate -c longclip-L.pt -x missing_or_corrupted.txt -t splits/test_split.npy -e search_test_1.json -qi qrel_test_1.json -b 1000
 ```
