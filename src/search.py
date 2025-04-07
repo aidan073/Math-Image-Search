@@ -225,3 +225,4 @@ if __name__ == "__main__":
     if(args.search_type == "quick"):
         if not (args.checkpoint_path and args.images_path and (args.texts_path or args.texts)):
             raise argparse.ArgumentError(None, "Missing required arguments for quick search. Usage: quick -c <path to Long-CLIP checkpoint> -i <path to images folder> (-t <text or several texts to search> OR -tp <.txt where each line is a text>).")
+        quick_search(args.checkpoint_path, args.search_type, args.texts_path, args.texts, args.images_path, None, args.output_path, args.batch_size, args.top_n)
