@@ -4,14 +4,13 @@ from src.experiment.eval import evaluate_model
 
 import os
 import torch
+import torch.distributed as dist
 import torch.multiprocessing as mp
 import argparse
 import numpy as np
 
 def get_args():
     parser = argparse.ArgumentParser(description="Full experiment pipeline. Data processing, finetuning, and evaluation.")
-    # parser.add_argument('--pipe', '-p', type=str, choices=['data', 'finetune', 'evaluate', 'complete'], help="Which part of pipeline to run. Options are: data, finetune, evaluate, complete.")
-    
     subparsers = parser.add_subparsers(dest='pipe_type', required=True)
 
     # data parser
@@ -73,7 +72,12 @@ def main():
                 os.environ["MASTER_PORT"] = "12354"
                 world_size = torch.cuda.device_count()
                 assert world_size >= 2, f"Distributed requires at least 2 GPUs to run, but got {world_size}"
-                mp.spawn(finetune, args=(args.distributed, args.splits_path, args.corrupted, args.c_input_path, args.c_output_path, 25, args.batch_size, world_size), nprocs=world_size, join=True)
+                try:
+                    mp.spawn(finetune, args=(args.distributed, args.splits_path, args.corrupted, args.c_input_path, args.c_output_path, 25, args.batch_size, world_size), nprocs=world_size, join=True)
+                except:
+                    if dist.is_initialized():
+                        dist.destroy_process_group()
+                    raise
             else:
                 finetune(0, args.distributed, args.splits_path, args.corrupted, args.c_input_path, args.c_output_path, batch_size=args.batch_size)
             

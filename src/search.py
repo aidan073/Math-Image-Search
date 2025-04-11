@@ -13,7 +13,7 @@ from typing import Union, Callable
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Run Long-CLIP search.")
-    subparsers = parser.add_subparsers(dest="search_type")
+    subparsers = parser.add_subparsers(dest="search_type", required=True)
 
     # quick search parser
     qSearch_parser = subparsers.add_parser('quick')
@@ -84,11 +84,11 @@ def quick_search(checkpoint_path:str, search_type:str='t2i', texts_path:str=None
                 texts.append(tokenize(line.strip(), truncate=True).squeeze(0).to(device))
 
     if len(texts)>batch_size:
-        _batchify(texts, batch_size)
+        texts = _batchify(texts, batch_size)
     else:
         texts = [texts]
     if len(images)>batch_size:
-        _batchify(images, batch_size)
+        images = _batchify(images, batch_size)
     else:
         images = [images]
                 
@@ -102,7 +102,7 @@ def quick_search(checkpoint_path:str, search_type:str='t2i', texts_path:str=None
     image_embeddings_list = []
     zipped_input = zip(texts, images)
     with torch.no_grad(): 
-        for texts, images in tqdm(zipped_input, "Encoding the data.", total=len(zipped_input)):
+        for texts, images in tqdm(zipped_input, "Encoding the data.", total=len(texts)):
             text_embeddings_list.append(model.encode_text(texts))
             image_embeddings_list.append(model.encode_image(images))
 
@@ -147,19 +147,19 @@ def full_search(checkpoint_path:str, test_split_path:dict, output_path:str=None,
 
     ids, texts, images = _load_test(test_split_path, device, tokenize, preprocess, missing_or_corrupted)
     if len(texts)>batch_size:
-        _batchify(texts, batch_size)
-        _batchify(images, batch_size)
+        texts = _batchify(texts, batch_size)
+        images = _batchify(images, batch_size)
     else:
         texts = [texts]
         images = [images]
 
-    texts = torch.tensor(texts)
-    images = torch.tensor(images)
+    # texts = torch.tensor(texts)
+    # images = torch.tensor(images)
     text_embeddings_list = []
     image_embeddings_list = []
     zipped_input = zip(texts, images)
     with torch.no_grad():
-        for texts, images in tqdm(zipped_input, "Encoding the data.", total=len(zipped_input)):
+        for texts, images in tqdm(zipped_input, "Encoding the data.", total=len(texts)):
             text_embeddings_list.append(model.encode_text(texts))
             image_embeddings_list.append(model.encode_image(images))
 
@@ -208,7 +208,9 @@ def _construct_run(ids:list[str], similarities:list, run_name:str, output_path:s
     return run
 
 def _batchify(lst, batch_size):
-    return [lst[i:i + batch_size] for i in range(0, len(lst), batch_size)]
+    batches = [lst[i:i + batch_size] for i in range(0, len(lst), batch_size)]
+    tensor_batches = [torch.stack(batch) for batch in batches]
+    return tensor_batches
 
 if __name__ == "__main__":
     args = parse_args()
