@@ -3,7 +3,7 @@ import numpy as np
 from ranx import Qrels, evaluate
 from src import search
 
-def evaluate_model(checkpoint_path:str, test_split_path:str, missing_or_corrupted:str, metrics:list, qrel_input_path:str=None, eval_output_path:str=None, qrel_output_path:str=None, return_mean:bool=True, test_split_splits:int=1)->None:
+def evaluate_model(checkpoint_path:str, test_split_path:str, missing_or_corrupted:str, metrics:list, qrel_input_path:str=None, eval_output_path:str=None, qrel_output_path:str=None, return_scores:bool=False, test_split_splits:int=1)->None:
     """
     Function to evaluate the performance of a Long-CLIP checkpoint.
 
@@ -15,7 +15,7 @@ def evaluate_model(checkpoint_path:str, test_split_path:str, missing_or_corrupte
         qrel_input_path (optional): Path to Qrel .json file to use for evaluation. If None, a new Qrel will be created.
         eval_output_path (optional): Path .json to save evaluation results in. If None, results will simply be printed.
         qrel_output_path (optional): Path .json to save Qrel in.
-        return_mean (Default=True): If True, returns mean of each metric. If False, returns dict with metric for each query.
+        return_scores (Default=False): If False, returns mean of each metric. If True, returns dict with metric for each query.
         test_split_splits (optional): Number of splits to make of the test_split. Defaults to 1, but if the test_split is very large, then splitting it up may be necessary to avoid memory errors.
     """
 
@@ -34,7 +34,7 @@ def evaluate_model(checkpoint_path:str, test_split_path:str, missing_or_corrupte
             qrel = json.load(f)
 
     # evaluate
-    results = evaluate(qrel, run, metrics, return_mean=return_mean)
+    results = evaluate(qrel, run, metrics, return_mean=not return_scores)
     if eval_output_path:
         with open(eval_output_path, "w") as f:
             json.dump(results, f)

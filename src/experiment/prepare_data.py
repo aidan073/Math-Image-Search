@@ -4,9 +4,10 @@ import csv
 import os
 import numpy as np
 from tqdm import tqdm
+from typing import Union
 from PIL import Image, UnidentifiedImageError
 
-def validate_image(image_path, ignore_exception:bool, output_path:str)->bool:
+def validate_image(image_path, ignore_exception:bool)->bool:
     integral_image = True
     absolute_path = os.path.abspath(image_path)
     if os.path.exists(absolute_path):
@@ -23,44 +24,52 @@ def validate_image(image_path, ignore_exception:bool, output_path:str)->bool:
         if not ignore_exception:
             raise FileNotFoundError()
         integral_image = False 
-    
-    if not integral_image:
-        with open(output_path, 'a', encoding='utf-8') as f:
-            f.write(os.path.basename(image_path)[0:-4] + '\n') # basename -png to get the original id
+
     return integral_image
     
 def validate_entry(entry, ignore_exception:bool)->bool:
     return True
   
-def integrity(metadata, output_path:str='missing_or_corrupted.txt', ignore_exception:bool=False)->bool:
+def integrity(metadata, output_path:str=None, ignore_exception:bool=False)->Union[bool,list[str]]:
     """
-    Verifys the integrity of the metadata file and the images, ensuring that images exist and the images are not corrupted
+    Verifys the integrity of the metadata file and the images, ensuring that images exist and the images are not corrupted.
 
     Args:
-        metadata: metadata iterable
-        output_path: .txt file path to save missing/corrupted image names in
-        ignore_exception: if set to True, the program execution will continue and return False when a corrupted file is found (instead of raising an exception)
+        metadata: Metadata iterable. Should be list/tuple of format: [[id, title, image_path], ...]
+        output_path: .txt file path to save missing/corrupted image ids in.
+        ignore_exception: If set to True, the program execution will continue and return False when a corrupted file is found (instead of raising an exception).
 
     Returns: 
-        True if file integrity is assured, False (or raises exception) otherwise
+        integral_data: If the entire dataset is integeral or not.
+        missing: A list containing all missing ids.
     """
     if os.path.exists(output_path):
         print(f"Output missing/corrupted images.txt path: {output_path} already exists. Please delete it or provide a different path.")
         raise FileExistsError()
     
+    missing = []
     integral_data = True
     for item in tqdm(metadata, desc="Verifying integrity of each sample"):
         valid_image = validate_image(item[2], ignore_exception, output_path)
         valid_entry = validate_entry(item[1], ignore_exception)
-        if not valid_image and valid_entry:
+        if not (valid_image and valid_entry):
             integral_data = False
-    return integral_data
+            missing.append(item[0] + "\n")
 
-def process_data(metadata_path:str, images_path:str, validate_data:bool=False)->tuple[list[list[str]], list[list[str]], list[list[str]]]:
+    with open(output_path, 'w', encoding='utf-8') as f:
+        f.writelines(missing)
+
+    return integral_data, missing
+
+def process_mse(metadata_path:str, images_path:str, validate_data:bool=False)->tuple[list[list[str]], list[list[str]], list[list[str]]]:
     """
-    metadata_path: path to .csv MSE dataset
-    images_path: path to directory containing MSE images
-    validata_data: if True, the entire MSE dataset will be checked for corrupted files or other invalidations (slow for large datasets).
+    metadata_path: path to .tsv MSE data.
+    images_path: path to directory containing MSE dataset images.
+    validate_data: if True, the entire MSE dataset will be checked for corrupted files or other invalidations (slow for large datasets).
+
+    Returns:
+        metadata: list/tuple of format: [[id, title, image_path], ...]
+        missing: A list containing all missing ids.
     """
     metadata = [] # [[id, title, image_path], ...]
     with open(metadata_path, "r", encoding='utf-8') as f:
@@ -73,18 +82,32 @@ def process_data(metadata_path:str, images_path:str, validate_data:bool=False)->
     
     # data validation
     if(validate_data):
-        integrity(metadata, ignore_exception=True)
+        missing = integrity(metadata, output_path="missing_mse.txt", return_missing=True, ignore_exception=True)
 
-    # splitting
-    np.random.shuffle(metadata)
-    train_size = int(0.8 * len(metadata))
-    val_size = int(0.1 * len(metadata))
+    return metadata, missing
 
-    train_split = metadata[0: train_size]
-    val_split = metadata[train_size: train_size + val_size]
-    test_split = metadata[train_size + val_size:]
+def process_wikipedia(metadata_path:str, images_path:str, validate_data:bool=False)->tuple[list[list[str]], list[list[str]], list[list[str]]]:
+    """
+    metadata_path: path to .tsv Wikipedia data.
+    images_path: path to directory containing Wikipedia dataset images.
+    validate_data: if True, the entire Wikipedia dataset will be checked for corrupted files or other invalidations (slow for large datasets).
 
-    return train_split, val_split, test_split
+    Returns:
+    metadata: list/tuple of format: [[id, title, image_path], ...]
+    missing: A list containing all missing ids.
+    """
+    metadata = [] # [[id, title, image_path], ...]
+    with open(metadata_path, "r", encoding='utf-8') as f:
+        reader = csv.reader(f, delimiter="\t")
+        for row in reader:
+            curr_row = [row[0], row[2], os.path.join(images_path, row[0])] # id, title, image_path
+            metadata.append(curr_row)
+    
+    # data validation
+    if(validate_data):
+        missing = integrity(metadata, output_path="missing_wiki.txt", return_missing=True, ignore_exception=True)
+
+    return metadata, missing
 
     
 

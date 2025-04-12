@@ -102,7 +102,7 @@ def quick_search(checkpoint_path:str, search_type:str='t2i', texts_path:str=None
     image_embeddings_list = []
     zipped_input = zip(texts, images)
     with torch.no_grad(): 
-        for texts, images in tqdm(zipped_input, "Encoding the data.", total=len(texts)):
+        for texts, images in tqdm(zipped_input, "Encoding the data", total=len(texts)):
             text_embeddings_list.append(model.encode_text(texts))
             image_embeddings_list.append(model.encode_image(images))
 
@@ -159,7 +159,7 @@ def full_search(checkpoint_path:str, test_split_path:dict, output_path:str=None,
     image_embeddings_list = []
     zipped_input = zip(texts, images)
     with torch.no_grad():
-        for texts, images in tqdm(zipped_input, "Encoding the data.", total=len(texts)):
+        for texts, images in tqdm(zipped_input, "Encoding the data", total=len(texts)):
             text_embeddings_list.append(model.encode_text(texts))
             image_embeddings_list.append(model.encode_image(images))
 

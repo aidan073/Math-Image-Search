@@ -84,27 +84,32 @@ def finetune(rank:int, distributed:bool, splits_path:str, corrupted_path:str, ch
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True)
 
-    # distributed setup
-    if distributed:
-        dist.init_process_group("nccl", rank=rank, world_size=world_size)
-        
-        # Move model to current GPU
-        model.to(rank)
-        model = DDP(model, device_ids=[rank]).module
-
-        # Ensures each GPU sees a different batch shard
-        train_sampler = DistributedSampler(train_dataset, num_replicas=world_size, rank=rank, shuffle=True)
-        train_dataloader = DataLoader(train_dataset, sampler=train_sampler, batch_size=batch_size)
-
-    total_steps = len(train_dataloader) * epochs
-    optimizer = AdaBelief(model.parameters(), lr=learning_rate, eps=1e-16, betas=(0.9, 0.995), weight_decay=1e-3, weight_decouple=False, rectify=True, print_change_log=False)
-    scheduler = OneCycleLR(optimizer, max_lr=learning_rate, total_steps=total_steps, pct_start=0.2, anneal_strategy='cos')
     
-    # Perform the actual finetuning
-    _perform_ft(rank, distributed, model, train_dataloader, val_dataloader, output_path, epochs, batch_size, scaler, scheduler, optimizer, world_size, text_logs_folder, plots_folder, ft_checkpoints_folder, save_min_loss)
+    try:
+        if distributed:
+            dist.init_process_group("nccl", rank=rank, world_size=world_size)
+            
+            # Move model to current GPU
+            model.to(rank)
+            model = DDP(model, device_ids=[rank]).module
 
-    if distributed:
-        dist.destroy_process_group()
+            # Ensures each GPU sees a different batch shard
+            train_sampler = DistributedSampler(train_dataset, num_replicas=world_size, rank=rank, shuffle=True)
+            train_dataloader = DataLoader(train_dataset, sampler=train_sampler, batch_size=batch_size)
+
+        total_steps = len(train_dataloader) * epochs
+        optimizer = AdaBelief(model.parameters(), lr=learning_rate, eps=1e-16, betas=(0.9, 0.995), weight_decay=1e-3, weight_decouple=False, rectify=True, print_change_log=False)
+        scheduler = OneCycleLR(optimizer, max_lr=learning_rate, total_steps=total_steps, pct_start=0.2, anneal_strategy='cos')
+        
+        # Perform the actual finetuning
+        _perform_ft(rank, distributed, model, train_dataloader, val_dataloader, output_path, epochs, batch_size, scaler, scheduler, optimizer, world_size, text_logs_folder, plots_folder, ft_checkpoints_folder, save_min_loss)
+    except:
+        if distributed:
+            dist.destroy_process_group()
+        raise
+    finally:
+        if distributed:
+            dist.destroy_process_group()
 
 def _adjust_unfreeze_rate(epoch, adjust_after=12, increase_rate=2):
     """
