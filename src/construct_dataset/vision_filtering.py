@@ -20,8 +20,8 @@ def filter(dataset_or_path:Union[str, list[str]], missing_or_path:Union[str, lis
         env_path: Path to .env file, which must contain "HF_TOKEN" field with hugging face llama access token as its value. 
         hf_token: Hugging face llama access token. You must provide this, or env_path.
     """
-    MATH_PROMPT = ""
-    SIM_PROMPT = ""
+    MATH_PROMPT = "Text: {text}\n\nDoes the image and text content relate to math? Respond with 1 if yes, or 0 for no. Output only the number."
+    SIM_PROMPT = "Text: {text}\n\nAre the image and text related? Respond with 1 if yes, or 0 for no. Output only the number."
     MODEL_ID = "meta-llama/Llama-3.2-11B-Vision"
 
     assert env_path or hf_token
@@ -38,18 +38,23 @@ def filter(dataset_or_path:Union[str, list[str]], missing_or_path:Union[str, lis
         device_map="auto",
         device=device
     )
+    model.eval()
 
-    math_inputs = _prepare_input(dataset_or_path, missing_or_path, MATH_PROMPT, processor, device)
-    sim_inputs = _prepare_input(dataset_or_path, missing_or_path, SIM_PROMPT, processor, device)
+    math_inputs, _ = _prepare_input(dataset_or_path, missing_or_path, MATH_PROMPT, processor, device)
+    sim_inputs, no_missing_dataset = _prepare_input(dataset_or_path, missing_or_path, SIM_PROMPT, processor, device)
 
-    output = model(**inputs)
-    prompt_len = inputs.input_ids.shape[-1]
-    generated_ids = output[:, prompt_len:]
-    generated_text = processor.batch_decode(generated_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)
+    math_classifications = _get_classifications(math_inputs, math_threshold)
+    sim_classifications = _get_classifications(sim_inputs, similarity_threshold)
 
-    return generated_text[0]
+    true_math_samples = [no_missing_dataset[idx] for idx, classification in enumerate(math_classifications) if classification == True]
+    true_sim_samples = [no_missing_dataset[idx] for idx, classification in enumerate(sim_classifications) if classification == True]
 
-def _prepare_input(dataset_or_path, missing_or_path, prompt, processor, device)->list[str]:
+    return true_math_samples, true_sim_samples
+
+def _prepare_input(dataset_or_path, missing_or_path, prompt, processor, device)->Union[list[str], list[str]]:
+    """
+    Convert a dataset into input ready batch. Also returns the original dataset with all missing/corrupted samples removed.
+    """
     msg = [
         {"role": "user", "content": [
             {"type": "image"},
@@ -82,4 +87,20 @@ def _prepare_input(dataset_or_path, missing_or_path, prompt, processor, device)-
             return_tensors="pt"
         ).to(device))
 
-    return inputs
+    return inputs, dataset
+
+def _get_classifications(model, processor, inputs, threshold)->list[bool]:
+    """
+    Produce list of predictions from input batch.
+    """
+    with torch.no_grad():
+        output = model(**inputs)
+    
+    next_token_logits = output.logits[:, -1, :]
+    tokenizer = processor.tokenizer
+    true_token_id = tokenizer.convert_tokens_to_ids(tokenizer.tokenize("1")[0])
+    false_token_id = tokenizer.convert_tokens_to_ids(tokenizer.tokenize("0")[0])
+    # calculate true vs false probability
+    predictions = [torch.nn.functional.softmax(batch_logits[[true_token_id, false_token_id]], dim=0)[0].item() >= threshold for batch_logits in next_token_logits]
+
+    return predictions

@@ -9,6 +9,7 @@ def merge(mse_tsv:str, mse_images:str, wiki_tsv:str, wiki_images:str, output_pat
     wiki_data, wiki_missing = process_wikipedia(wiki_tsv, wiki_images, False)
     merged_missing = mse_missing + wiki_missing
     merged_data = mse_data + wiki_data
+    vision_filtering.filter(merged_data, merged_missing)
 
     
 
