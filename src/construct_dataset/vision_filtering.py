@@ -15,7 +15,7 @@ def filter(dataset_or_path:Union[str, list[str]], missing_or_path:Union[str, lis
     
     Args:
         dataset_or_path: Path to dataset .tsv file, or dataset of format: [[id, title/text, image_path], ...]
-        missing_or_path: Path to missing .txt file, or list with missing ids. These will be excluded from the returned datasets.
+        missing_or_path: Path to missing .txt file, or set with missing ids. These will be excluded from the returned datasets.
         math_output_path: .tsv file to save math filtered dataset in.
         sim_output_path: .tsv file to save similarity filtered dataset in.
         math_threshold: "confidence" required to classify sample as math. Specifically, confidence = output of softmax(true_token) with denominator containing true_token and false_token.
@@ -26,7 +26,7 @@ def filter(dataset_or_path:Union[str, list[str]], missing_or_path:Union[str, lis
     """
     MATH_PROMPT = "Text: {text}\n\nDoes the image and text content relate to math? Respond with 1 if yes, or 0 for no. Output only the number."
     SIM_PROMPT = "Text: {text}\n\nAre the image and text related? Respond with 1 if yes, or 0 for no. Output only the number."
-    MODEL_ID = "meta-llama/Llama-3.2-11B-Vision"
+    MODEL_ID = "meta-llama/Llama-3.2-11B-Vision-Instruct"
 
     if math_output_path:
         if os.path.exists(math_output_path):
@@ -83,19 +83,18 @@ def _prepare_input(dataset_or_path, missing_or_path, prompt, batch_size, process
         ]}
     ]
     # load missing
-    if(isinstance(missing_or_path), str):
-        with open(dataset_or_path, 'r', encoding='utf-8') as f:
-            reader = csv.reader(f, delimiter="\t")
-            missing = {missing_id for missing_id in reader}
+    if isinstance(missing_or_path, str):
+        with open(missing_or_path, 'r', encoding='utf-8') as f:
+            missing = {missing_id.strip() for missing_id in f}
     else:
         missing = missing_or_path
     # load dataset
-    if(isinstance(dataset_or_path, str)):
+    if isinstance(dataset_or_path, str):
         with open(dataset_or_path, 'r', encoding='utf-8') as f:
             reader = csv.reader(f, delimiter="\t")
-            dataset = [sample for sample in reader if sample not in missing]
+            dataset = [sample for sample in reader if sample[0] not in missing]
     else:
-        dataset = [sample for sample in dataset_or_path if sample not in missing]
+        dataset = [sample for sample in dataset_or_path if sample[0] not in missing]
     # process batches of data
     inputs = []
     for i in tqdm(range(0, len(dataset), batch_size), total=math.ceil(len(dataset) / batch_size), desc="Preparing dataset for model input"):
@@ -118,12 +117,15 @@ def _get_classifications(model, processor, inputs, threshold)->list[bool]:
     tokenizer = processor.tokenizer
     true_token_id = tokenizer.convert_tokens_to_ids(tokenizer.tokenize("1")[0])
     false_token_id = tokenizer.convert_tokens_to_ids(tokenizer.tokenize("0")[0])
-    with torch.no_grad():
-        output = model(**inputs)
-        next_token_logits = output.logits[:, -1, :]
-        target_logits = next_token_logits[:, [true_token_id, false_token_id]]
-        # calculate true vs false probability
-        probs = torch.nn.functional.softmax(target_logits, dim=1)
-        predictions = (probs[:, 0] >= threshold).tolist()
+    predictions = []
+    for batch in tqdm(inputs, total=len(inputs), desc="Filtering batches"):
+        with torch.no_grad():
+            output = model(**inputs)
+            next_token_logits = output.logits[:, -1, :]
+            target_logits = next_token_logits[:, [true_token_id, false_token_id]]
+            # calculate true vs false probability
+            probs = torch.nn.functional.softmax(target_logits, dim=1)
+            temp_predictions = (probs[:, 0] >= threshold).tolist()
+            predictions += temp_predictions
 
     return predictions

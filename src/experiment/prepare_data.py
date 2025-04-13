@@ -54,7 +54,7 @@ def integrity(metadata, output_path:str=None, ignore_exception:bool=False)->Unio
         valid_entry = validate_entry(item[1], ignore_exception)
         if not (valid_image and valid_entry):
             integral_data = False
-            missing.append(item[0] + "\n")
+            missing.append(item[0])
 
     if output_path:
         with open(output_path, 'w', encoding='utf-8') as f:
@@ -85,7 +85,7 @@ def process_mse(metadata_path:str, images_path:str, missing_output_path:str=None
     # data validation
     missing = []
     if(validate_data):
-        missing = integrity(metadata, output_path=missing_output_path, ignore_exception=True)
+        _, missing = integrity(metadata, output_path=missing_output_path, ignore_exception=True)
 
     return metadata, missing
 
@@ -110,7 +110,7 @@ def process_wikipedia(metadata_path:str, images_path:str, missing_output_path:st
     # data validation
     missing = []
     if(validate_data):
-        missing = integrity(metadata, output_path=missing_output_path, ignore_exception=True)
+        _, missing = integrity(metadata, output_path=missing_output_path, ignore_exception=True)
 
     return metadata, missing
 
