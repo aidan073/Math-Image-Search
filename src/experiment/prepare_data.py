@@ -50,7 +50,7 @@ def integrity(metadata, output_path:str=None, ignore_exception:bool=False)->Unio
     missing = []
     integral_data = True
     for item in tqdm(metadata, desc="Verifying integrity of each sample"):
-        valid_image = validate_image(item[2], ignore_exception, output_path)
+        valid_image = validate_image(item[2], ignore_exception)
         valid_entry = validate_entry(item[1], ignore_exception)
         if not (valid_image and valid_entry):
             integral_data = False
@@ -62,7 +62,7 @@ def integrity(metadata, output_path:str=None, ignore_exception:bool=False)->Unio
 
     return integral_data, missing
 
-def process_mse(metadata_path:str, images_path:str, missing_output_path:str=None, validate_data:bool=False)->tuple[list[list[str]], list[list[str]], list[list[str]]]:
+def process_mse(metadata_path:str, images_path:str, missing_output_path:str=None, validate_data:bool=False)->tuple[list[list[str]], list[str]]:
     """
     metadata_path: path to .tsv MSE data.
     images_path: path to directory containing MSE dataset images.
@@ -70,7 +70,7 @@ def process_mse(metadata_path:str, images_path:str, missing_output_path:str=None
     validate_data: if True, the entire MSE dataset will be checked for corrupted files or other invalidations (slow for large datasets).
 
     Returns:
-        metadata: list/tuple of format: [[id, title, image_path], ...]
+        metadata: list/tuple of format [[id, title, image_path], ...].
         missing: A list containing all missing ids.
     """
     metadata = [] # [[id, title, image_path], ...]
@@ -83,12 +83,13 @@ def process_mse(metadata_path:str, images_path:str, missing_output_path:str=None
                 metadata.append(curr_row)
     
     # data validation
+    missing = []
     if(validate_data):
-        missing = integrity(metadata, output_path=missing_output_path, return_missing=True, ignore_exception=True)
+        missing = integrity(metadata, output_path=missing_output_path, ignore_exception=True)
 
     return metadata, missing
 
-def process_wikipedia(metadata_path:str, images_path:str, missing_output_path:str=None, validate_data:bool=False)->tuple[list[list[str]], list[list[str]], list[list[str]]]:
+def process_wikipedia(metadata_path:str, images_path:str, missing_output_path:str=None, validate_data:bool=False)->tuple[list[list[str]], list[str]]:
     """
     metadata_path: path to .tsv Wikipedia data.
     images_path: path to directory containing Wikipedia dataset images.
@@ -107,8 +108,9 @@ def process_wikipedia(metadata_path:str, images_path:str, missing_output_path:st
             metadata.append(curr_row)
     
     # data validation
+    missing = []
     if(validate_data):
-        missing = integrity(metadata, output_path=missing_output_path, return_missing=True, ignore_exception=True)
+        missing = integrity(metadata, output_path=missing_output_path, ignore_exception=True)
 
     return metadata, missing
 
