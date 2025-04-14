@@ -52,14 +52,11 @@ def filter(dataset_or_path:Union[str, list[str]], missing_or_path:Union[str, lis
     )
     model.eval()
 
-    math_inputs, _ = _prepare_input(dataset_or_path, missing_or_path, MATH_PROMPT, batch_size, processor, device)
-    sim_inputs, no_missing_dataset = _prepare_input(dataset_or_path, missing_or_path, SIM_PROMPT, batch_size, processor, device)
+    math_results, _ = _run_filter(model, dataset_or_path, missing_or_path, MATH_PROMPT, math_threshold, batch_size, processor, device)
+    sim_results, no_missing_dataset = _run_filter(model, dataset_or_path, missing_or_path, SIM_PROMPT, similarity_threshold, batch_size, processor, device)
 
-    math_classifications = _get_classifications(math_inputs, math_threshold)
-    sim_classifications = _get_classifications(sim_inputs, similarity_threshold)
-
-    true_math_samples = [no_missing_dataset[idx] for idx, classification in enumerate(math_classifications) if classification == True]
-    true_sim_samples = [no_missing_dataset[idx] for idx, classification in enumerate(sim_classifications) if classification == True]
+    true_math_samples = [no_missing_dataset[idx] for idx, classification in enumerate(math_results) if classification == True]
+    true_sim_samples = [no_missing_dataset[idx] for idx, classification in enumerate(sim_results) if classification == True]
 
     if math_output_path:
         with open(math_output_path, 'w', encoding='utf-8') as f:
@@ -72,7 +69,7 @@ def filter(dataset_or_path:Union[str, list[str]], missing_or_path:Union[str, lis
 
     return true_math_samples, true_sim_samples
 
-def _prepare_input(dataset_or_path, missing_or_path, prompt, batch_size, processor, device)->Union[list[str], list[str]]:
+def _run_filter(model, dataset_or_path, missing_or_path, prompt, threshold, batch_size, processor, device)->Union[list[str], list[str]]:
     """
     Convert a dataset into input ready batch. Also returns the original dataset with all missing/corrupted samples removed.
     """
@@ -96,8 +93,8 @@ def _prepare_input(dataset_or_path, missing_or_path, prompt, batch_size, process
     else:
         dataset = [sample for sample in dataset_or_path if sample[0] not in missing]
     # process batches of data
-    inputs = []
-    for i in tqdm(range(0, len(dataset), batch_size), total=math.ceil(len(dataset) / batch_size), desc="Preparing dataset for model input"):
+    results = []
+    for i in tqdm(range(0, len(dataset), batch_size), total=math.ceil(len(dataset) / batch_size), desc="Classifying Samples"):
         texts = []
         images = []
         for sample in dataset[i:i+batch_size]:
@@ -105,10 +102,11 @@ def _prepare_input(dataset_or_path, missing_or_path, prompt, batch_size, process
             input_text = processor.apply_chat_template(msg, add_generation_prompt=True)
             texts.append(input_text)
             images.append([Image.open(sample[2])])
+        inputs = [processor(images, texts, add_special_tokens=False, padding=True, truncation=True, return_tensors="pt").to(device)]
 
-        inputs.append(processor(images, texts, add_special_tokens=False, padding=True, truncation=True, return_tensors="pt").to(device))
+        results += _get_classifications(model, processor, inputs, threshold)
 
-    return inputs, dataset
+    return results, dataset
 
 def _get_classifications(model, processor, inputs, threshold)->list[bool]:
     """
@@ -120,7 +118,7 @@ def _get_classifications(model, processor, inputs, threshold)->list[bool]:
     predictions = []
     for batch in tqdm(inputs, total=len(inputs), desc="Filtering batches"):
         with torch.no_grad():
-            output = model(**inputs)
+            output = model(**batch)
             next_token_logits = output.logits[:, -1, :]
             target_logits = next_token_logits[:, [true_token_id, false_token_id]]
             # calculate true vs false probability

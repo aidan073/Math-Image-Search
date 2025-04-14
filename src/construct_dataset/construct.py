@@ -78,7 +78,7 @@ if __name__ == "__main__":
     SIM_OUTPUT_PATH = "Merged-Sim-Dataset"
     MATH_THRESHOLD = 0.5
     SIM_THRESHOLD = 0.5
-    BATCH_SIZE = 100
+    BATCH_SIZE = 20
     ENV_PATH = ".env"
     HF_TOKEN = None
 
