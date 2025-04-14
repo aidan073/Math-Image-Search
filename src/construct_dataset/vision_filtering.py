@@ -101,10 +101,10 @@ def _prepare_input(dataset_or_path, missing_or_path, prompt, batch_size, process
         texts = []
         images = []
         for sample in dataset[i:i+batch_size]:
-            msg[0]["content"][1] = prompt.format(text=sample[1])
+            msg[0]["content"][1]["text"] = prompt.format(text=sample[1])
             input_text = processor.apply_chat_template(msg, add_generation_prompt=True)
             texts.append(input_text)
-            images.append(Image.open(sample[2]))
+            images.append([Image.open(sample[2])])
 
         inputs.append(processor(images, texts, add_special_tokens=False, padding=True, truncation=True, return_tensors="pt").to(device))
 
