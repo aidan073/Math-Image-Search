@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 from huggingface_hub import login
 from transformers import MllamaForConditionalGeneration, AutoProcessor
 
-def filter(dataset_or_path:Union[str, list[str]], missing_or_path:Union[str, list[str]], math_output_path:str=None, sim_output_path:str=None, math_threshold:int=0.5, similarity_threshold:int=0.5, batch_size:int=100, env_path:str=None, hf_token:str=None):
+def filter(dataset_or_path:Union[str, list[str]], missing_or_path:Union[str, list[str]], math_output_path:str=None, sim_output_path:str=None, math_threshold:int=0.5, similarity_threshold:int=0.5, env_path:str=None, hf_token:str=None):
     """
     Filter math samples from datasets using Llama3.2 vision.
     
@@ -20,7 +20,6 @@ def filter(dataset_or_path:Union[str, list[str]], missing_or_path:Union[str, lis
         sim_output_path: .tsv file to save similarity filtered dataset in.
         math_threshold: "confidence" required to classify sample as math. Specifically, confidence = output of softmax(true_token) with denominator containing true_token and false_token.
         similarity_threshold: "confidence" required to classify a text and image as being related. Specifically, confidence = output of softmax(true_token) with denominator containing true_token and false_token.
-        batch_size: Batch size for classifier input.
         env_path: Path to .env file, which must contain "HF_TOKEN" field with hugging face llama access token as its value. 
         hf_token: Hugging face llama access token. You must provide this, or env_path.
     """
@@ -52,24 +51,24 @@ def filter(dataset_or_path:Union[str, list[str]], missing_or_path:Union[str, lis
     )
     model.eval()
 
-    math_results, _ = _run_filter(model, dataset_or_path, missing_or_path, MATH_PROMPT, math_threshold, batch_size, processor, device)
-    sim_results, no_missing_dataset = _run_filter(model, dataset_or_path, missing_or_path, SIM_PROMPT, similarity_threshold, batch_size, processor, device)
+    math_results, _ = _run_filter(model, dataset_or_path, missing_or_path, MATH_PROMPT, math_threshold, processor, device)
+    sim_results, no_missing_dataset = _run_filter(model, dataset_or_path, missing_or_path, SIM_PROMPT, similarity_threshold, processor, device)
 
     true_math_samples = [no_missing_dataset[idx] for idx, classification in enumerate(math_results) if classification == True]
     true_sim_samples = [no_missing_dataset[idx] for idx, classification in enumerate(sim_results) if classification == True]
 
     if math_output_path:
-        with open(math_output_path, 'w', encoding='utf-8') as f:
+        with open(os.path.join(math_output_path, "Meta.tsv"), 'w', encoding='utf-8') as f:
             writer = csv.writer(f, delimiter='\t')
             writer.writerows(true_math_samples)
     if sim_output_path:
-        with open(sim_output_path, 'w', encoding='utf-8') as f:
+        with open(os.path.join(sim_output_path, "Meta.tsv"), 'w', encoding='utf-8') as f:
             writer = csv.writer(f, delimiter='\t')
             writer.writerows(true_sim_samples)
 
     return true_math_samples, true_sim_samples
 
-def _run_filter(model, dataset_or_path, missing_or_path, prompt, threshold, batch_size, processor, device)->Union[list[str], list[str]]:
+def _run_filter(model, dataset_or_path, missing_or_path, prompt, threshold, processor, device)->Union[list[str], list[str]]:
     """
     Convert a dataset into input ready batch. Also returns the original dataset with all missing/corrupted samples removed.
     """
@@ -92,38 +91,49 @@ def _run_filter(model, dataset_or_path, missing_or_path, prompt, threshold, batc
             dataset = [sample for sample in reader if sample[0] not in missing]
     else:
         dataset = [sample for sample in dataset_or_path if sample[0] not in missing]
-    # process batches of data
-    results = []
-    for i in tqdm(range(0, len(dataset), batch_size), total=math.ceil(len(dataset) / batch_size), desc="Classifying Samples"):
-        texts = []
-        images = []
-        for sample in dataset[i:i+batch_size]:
-            msg[0]["content"][1]["text"] = prompt.format(text=sample[1])
-            input_text = processor.apply_chat_template(msg, add_generation_prompt=True)
-            texts.append(input_text)
-            images.append([Image.open(sample[2])])
-        inputs = [processor(images, texts, add_special_tokens=False, padding=True, truncation=True, return_tensors="pt").to(device)]
 
-        results += _get_classifications(model, processor, inputs, threshold)
+    true_token_id = processor.tokenizer.convert_tokens_to_ids(processor.tokenizer.tokenize("1")[0])
+    false_token_id = processor.tokenizer.convert_tokens_to_ids(processor.tokenizer.tokenize("0")[0])
+    results = []
+    for sample in dataset:
+        msg[0]["content"][1]["text"] = prompt.format(text=sample[1])
+        input_text = processor.apply_chat_template(msg, add_generation_prompt=True)
+        input_image = Image.open(sample[2])
+        input = processor(input_image, input_text, add_special_tokens=False, padding=True, truncation=True, return_tensors="pt").to(device)
+        results.append(_classify_until_answer(model, input, threshold, true_token_id, false_token_id, topk=1))
 
     return results, dataset
 
-def _get_classifications(model, processor, inputs, threshold)->list[bool]:
+def _classify_until_answer(model, input, threshold, id_1, id_0, max_steps=10, topk=5)->bool:
     """
-    Produce list of predictions from input batch.
+    Classify until the model gives a clear answer or reaches max_steps. If max_steps is reached, false classification is assumed.
+    **only works for 1 sample at a time currently**
     """
-    tokenizer = processor.tokenizer
-    true_token_id = tokenizer.convert_tokens_to_ids(tokenizer.tokenize("1")[0])
-    false_token_id = tokenizer.convert_tokens_to_ids(tokenizer.tokenize("0")[0])
-    predictions = []
-    for batch in tqdm(inputs, total=len(inputs), desc="Filtering batches"):
-        with torch.no_grad():
-            output = model(**batch)
-            next_token_logits = output.logits[:, -1, :]
-            target_logits = next_token_logits[:, [true_token_id, false_token_id]]
-            # calculate true vs false probability
-            probs = torch.nn.functional.softmax(target_logits, dim=1)
-            temp_predictions = (probs[:, 0] >= threshold).tolist()
-            predictions += temp_predictions
+    device = input["input_ids"].device
 
-    return predictions
+    for _ in range(max_steps):
+        with torch.no_grad():
+            output = model(**input)
+            logits = output.logits[:, -1, :]  # shape: (1, vocab_size)
+
+        topk_ids = torch.topk(logits, topk, dim=-1).indices[0].tolist()
+
+        if id_1 in topk_ids or id_0 in topk_ids:
+            target_logits = logits[:, [id_1, id_0]]
+            logit_pred = torch.nn.functional.softmax(target_logits, dim=1)
+            prediction = True if logit_pred[0, 0] >= threshold else False
+
+            return prediction
+
+        # Append the most likely token and update attention mask
+        next_token_id = topk_ids[0]
+        next_token_tensor = torch.tensor([[next_token_id]], device=device)
+
+        input["input_ids"] = torch.cat([input["input_ids"], next_token_tensor], dim=1)
+
+        if "attention_mask" in input:
+            next_attention_mask = torch.ones_like(next_token_tensor)
+            input["attention_mask"] = torch.cat([input["attention_mask"], next_attention_mask], dim=1)
+
+    print(f"Reached classification attempt limit of {max_steps}")
+    return False

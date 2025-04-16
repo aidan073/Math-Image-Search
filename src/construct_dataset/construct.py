@@ -28,10 +28,13 @@ def finalize(true_math_samples:list[str], true_sim_samples:list[str], output_pat
     """
     Take the seperate filtered datasets, and combine into one dataset which meets all criteria.
     """
-    if output_path and os.path.exists(output_path):
-        response = input(f"Designated output file '{output_path}' already exists. Do you want to override it? (y/N): ").strip().lower()
-        if response != "y" and response != "yes":
-            raise FileExistsError(f"File '{output_path}' already exists. Aborting operation.")
+    if output_path:
+        if os.path.exists(output_path):
+            response = input(f"Designated output file '{output_path}' already exists. Do you want to override it? (y/N): ").strip().lower()
+            if response != "y" and response != "yes":
+                raise FileExistsError(f"File '{output_path}' already exists. Aborting operation.")
+        else:
+            os.mkdir(output_path)
 
     math_ids = {sample[0] for sample in true_math_samples}
     sim_ids = {sample[0] for sample in true_sim_samples}
@@ -45,7 +48,7 @@ def finalize(true_math_samples:list[str], true_sim_samples:list[str], output_pat
 
     final = list(id_to_sample.values())
     if output_path:
-        with open(output_path, 'w', encoding='utf-8') as f:
+        with open(os.path.join(output_path, "Meta.tsv"), 'w', encoding='utf-8') as f:
             writer = csv.writer(f, delimiter='\t')
             writer.writerows(final)
     return final
@@ -65,8 +68,15 @@ if __name__ == "__main__":
     # ENV_PATH = ""
     # HF_TOKEN = None
 
-    MSE_TSV_PATH = "/mnt/netstore1_home/aidan.bell/MathStackExchange/MSE.tsv"
-    MSE_IMAGES_PATH = "/mnt/netstore1_home/aidan.bell/MathStackExchange/MSE_images/MathmaticaImages"
+    # MSE_TSV_PATH = "/mnt/netstore1_home/aidan.bell/MathStackExchange/MSE.tsv"
+    # MSE_IMAGES_PATH = "/mnt/netstore1_home/aidan.bell/MathStackExchange/MSE_images/"
+    # WIKI_TSV_PATH = "/mnt/netstore1_home/aidan.bell/WikipediaMath/TIMath_Wiki.tsv"
+    # WIKI_IMAGES_PATH = "/mnt/netstore1_home/aidan.bell/WikipediaMath/Wiki_Images"
+    # DATASET_OUTPUT_PATH = None
+    # MISSING_OUTPUT_PATH = None
+
+    MSE_TSV_PATH = "/mnt/netstore1_home/aidan.bell/MathTesting/Meta.tsv"
+    MSE_IMAGES_PATH = "/mnt/netstore1_home/aidan.bell/MathTesting/Images"
     WIKI_TSV_PATH = "/mnt/netstore1_home/aidan.bell/WikipediaMath/TIMath_Wiki.tsv"
     WIKI_IMAGES_PATH = "/mnt/netstore1_home/aidan.bell/WikipediaMath/Wiki_Images"
     DATASET_OUTPUT_PATH = None
@@ -78,12 +88,12 @@ if __name__ == "__main__":
     SIM_OUTPUT_PATH = "Merged-Sim-Dataset"
     MATH_THRESHOLD = 0.5
     SIM_THRESHOLD = 0.5
-    BATCH_SIZE = 20
     ENV_PATH = ".env"
     HF_TOKEN = None
 
-    dataset, missing = merge(MSE_TSV_PATH, MSE_IMAGES_PATH, WIKI_TSV_PATH, WIKI_IMAGES_PATH, DATASET_OUTPUT_PATH, MISSING_OUTPUT_PATH)
-    true_math_samples, true_sim_samples = vf.filter(dataset, missing, MATH_OUTPUT_PATH, SIM_OUTPUT_PATH, MATH_THRESHOLD, SIM_THRESHOLD, BATCH_SIZE, ENV_PATH, HF_TOKEN)
+    # dataset, missing = merge(MSE_TSV_PATH, MSE_IMAGES_PATH, WIKI_TSV_PATH, WIKI_IMAGES_PATH, DATASET_OUTPUT_PATH, MISSING_OUTPUT_PATH)
+    dataset, missing = process_mse(MSE_TSV_PATH, MSE_IMAGES_PATH, validate_data=True)
+    true_math_samples, true_sim_samples = vf.filter(dataset, missing, MATH_OUTPUT_PATH, SIM_OUTPUT_PATH, MATH_THRESHOLD, SIM_THRESHOLD, ENV_PATH, HF_TOKEN)
     final_dataset = finalize(true_math_samples, true_sim_samples, FINAL_OUTPUT_PATH)
 
     print(f"Original Merged Dataset Size: {len(dataset)}")
