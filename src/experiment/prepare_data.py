@@ -62,12 +62,13 @@ def integrity(metadata, output_path:str=None, ignore_exception:bool=False)->Unio
 
     return integral_data, missing
 
-def process_mse(metadata_path:str, images_path:str, missing_output_path:str=None, validate_data:bool=False)->tuple[list[list[str]], list[str]]:
+def process_mse(metadata_path:str, images_path:str, missing_output_path:str=None, validate_data:bool=False, has_header:bool=True)->tuple[list[list[str]], list[str]]:
     """
     metadata_path: path to .tsv MSE data.
     images_path: path to directory containing MSE dataset images.
     missing_output_path: .txt file to save ids which are missing or corrupted.
     validate_data: if True, the entire MSE dataset will be checked for corrupted files or other invalidations (slow for large datasets).
+    has_header (default=True): Will skip the first row (header) if true.
 
     Returns:
         metadata: list/tuple of format [[id, title, image_path], ...].
@@ -76,10 +77,13 @@ def process_mse(metadata_path:str, images_path:str, missing_output_path:str=None
     metadata = [] # [[id, title, image_path], ...]
     with open(metadata_path, "r", encoding='utf-8') as f:
         reader = csv.reader(f, delimiter="\t")
-        next(reader, None)
+        if has_header: 
+            next(reader, None)
         for row in reader:
-            if(row[1][-2:] == '_0'): # only one image per text (might attempt to modify loss function to support multiple true pairs)
-                curr_row = [row[1], row[2], os.path.join(images_path, row[1]+".png")] # id, title, image_path
+            # if(row[1][-2:] == '_0'): # only one image per text (might attempt to modify loss function to support multiple true pairs)
+            #     curr_row = [row[1], row[2], os.path.join(images_path, row[1]+".png")] # id, title, image_path
+            if(row[0][-2:] == '_0'): # only one image per text (might attempt to modify loss function to support multiple true pairs)
+                curr_row = [row[0], row[1], os.path.join(images_path, row[0]+".png")] # id, title, image_path
                 metadata.append(curr_row)
     
     # data validation
@@ -89,12 +93,13 @@ def process_mse(metadata_path:str, images_path:str, missing_output_path:str=None
 
     return metadata, missing
 
-def process_wikipedia(metadata_path:str, images_path:str, missing_output_path:str=None, validate_data:bool=False)->tuple[list[list[str]], list[str]]:
+def process_wikipedia(metadata_path:str, images_path:str, missing_output_path:str=None, validate_data:bool=False, has_header:bool=False)->tuple[list[list[str]], list[str]]:
     """
     metadata_path: path to .tsv Wikipedia data.
     images_path: path to directory containing Wikipedia dataset images.
     missing_output_path: .txt file to save ids which are missing or corrupted.
     validate_data: if True, the entire Wikipedia dataset will be checked for corrupted files or other invalidations (slow for large datasets).
+    has_header (default=False): Will skip the first row (header) if true.
 
     Returns:
     metadata: list/tuple of format: [[id, title, image_path], ...]
@@ -102,6 +107,8 @@ def process_wikipedia(metadata_path:str, images_path:str, missing_output_path:st
     """
     metadata = [] # [[id, title, image_path], ...]
     with open(metadata_path, "r", encoding='utf-8') as f:
+        if has_header: 
+            next(reader, None)
         reader = csv.reader(f, delimiter="\t")
         for row in reader:
             curr_row = [row[0], row[2], os.path.join(images_path, row[0])] # id, title, image_path

@@ -8,8 +8,8 @@ def merge(mse_tsv:str, mse_images:str, wiki_tsv:str, wiki_images:str, dataset_ou
     """
     Merge the MSE and Wikipedia datasets.
     """
-    mse_data, mse_missing = process_mse(mse_tsv, mse_images, validate_data=True)
-    wiki_data, wiki_missing = process_wikipedia(wiki_tsv, wiki_images, validate_data=True)
+    mse_data, mse_missing = process_mse(mse_tsv, mse_images, validate_data=True, has_header=False) #TODO allow has_header as param
+    wiki_data, wiki_missing = process_wikipedia(wiki_tsv, wiki_images, validate_data=True, has_header=False)
     merged_data = mse_data + wiki_data
     merged_missing = mse_missing + wiki_missing
 
@@ -75,24 +75,31 @@ if __name__ == "__main__":
     # DATASET_OUTPUT_PATH = None
     # MISSING_OUTPUT_PATH = None
 
-    MSE_TSV_PATH = "/mnt/netstore1_home/aidan.bell/MathTesting/Meta.tsv"
-    MSE_IMAGES_PATH = "/mnt/netstore1_home/aidan.bell/MathTesting/Images"
-    WIKI_TSV_PATH = "/mnt/netstore1_home/aidan.bell/WikipediaMath/TIMath_Wiki.tsv"
-    WIKI_IMAGES_PATH = "/mnt/netstore1_home/aidan.bell/WikipediaMath/Wiki_Images"
+    # MSE_TSV_PATH = "/mnt/netstore1_home/aidan.bell/MathTesting/Meta.tsv"
+    # MSE_IMAGES_PATH = "/mnt/netstore1_home/aidan.bell/MathTesting/Images"
+    # WIKI_TSV_PATH = "/mnt/netstore1_home/aidan.bell/WikipediaMath/TIMath_Wiki.tsv"
+    # WIKI_IMAGES_PATH = "/mnt/netstore1_home/aidan.bell/WikipediaMath/Wiki_Images"
+    # DATASET_OUTPUT_PATH = None
+    # MISSING_OUTPUT_PATH = None
+
+
+    MSE_TSV_PATH = "mini_mse/metadata.tsv"
+    MSE_IMAGES_PATH = "mini_mse/Images"
+    WIKI_TSV_PATH = "mini_wiki/metadata.tsv"
+    WIKI_IMAGES_PATH = "mini_wiki/Images"
     DATASET_OUTPUT_PATH = None
     MISSING_OUTPUT_PATH = None
 
-    FINAL_OUTPUT_PATH = "Final-Dataset"
+    FINAL_OUTPUT_PATH = "Final-Dataset2"
     #TODO Make an argparser for filtering.
-    MATH_OUTPUT_PATH = "Merged-Math-Dataset"
-    SIM_OUTPUT_PATH = "Merged-Sim-Dataset"
+    MATH_OUTPUT_PATH = "Merged-Math-Dataset2"
+    SIM_OUTPUT_PATH = "Merged-Sim-Dataset2"
     MATH_THRESHOLD = 0.5
     SIM_THRESHOLD = 0.5
     ENV_PATH = ".env"
     HF_TOKEN = None
 
-    # dataset, missing = merge(MSE_TSV_PATH, MSE_IMAGES_PATH, WIKI_TSV_PATH, WIKI_IMAGES_PATH, DATASET_OUTPUT_PATH, MISSING_OUTPUT_PATH)
-    dataset, missing = process_mse(MSE_TSV_PATH, MSE_IMAGES_PATH, validate_data=True)
+    dataset, missing = merge(MSE_TSV_PATH, MSE_IMAGES_PATH, WIKI_TSV_PATH, WIKI_IMAGES_PATH, DATASET_OUTPUT_PATH, MISSING_OUTPUT_PATH)
     true_math_samples, true_sim_samples = vf.filter(dataset, missing, MATH_OUTPUT_PATH, SIM_OUTPUT_PATH, MATH_THRESHOLD, SIM_THRESHOLD, ENV_PATH, HF_TOKEN)
     final_dataset = finalize(true_math_samples, true_sim_samples, FINAL_OUTPUT_PATH)
 
