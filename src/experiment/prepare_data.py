@@ -82,8 +82,8 @@ def process_mse(metadata_path:str, images_path:str, missing_output_path:str=None
         for row in reader:
             # if(row[1][-2:] == '_0'): # only one image per text (might attempt to modify loss function to support multiple true pairs)
             #     curr_row = [row[1], row[2], os.path.join(images_path, row[1]+".png")] # id, title, image_path
-            if(row[0][-2:] == '_0'): # only one image per text (might attempt to modify loss function to support multiple true pairs)
-                curr_row = [row[0], row[1], os.path.join(images_path, row[0]+".png")] # id, title, image_path
+            if(row[1][-2:] == '_0'): # only one image per text (might attempt to modify loss function to support multiple true pairs)
+                curr_row = [row[1], row[2], os.path.join(images_path, row[1]+".png")] # id, title, image_path
                 metadata.append(curr_row)
     
     # data validation

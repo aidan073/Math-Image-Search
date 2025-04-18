@@ -68,12 +68,12 @@ if __name__ == "__main__":
     # ENV_PATH = ""
     # HF_TOKEN = None
 
-    # MSE_TSV_PATH = "/mnt/netstore1_home/aidan.bell/MathStackExchange/MSE.tsv"
-    # MSE_IMAGES_PATH = "/mnt/netstore1_home/aidan.bell/MathStackExchange/MSE_images/"
-    # WIKI_TSV_PATH = "/mnt/netstore1_home/aidan.bell/WikipediaMath/TIMath_Wiki.tsv"
-    # WIKI_IMAGES_PATH = "/mnt/netstore1_home/aidan.bell/WikipediaMath/Wiki_Images"
-    # DATASET_OUTPUT_PATH = None
-    # MISSING_OUTPUT_PATH = None
+    MSE_TSV_PATH = "/mnt/netstore1_home/aidan.bell/MathStackExchange/MSE.tsv"
+    MSE_IMAGES_PATH = "/mnt/netstore1_home/aidan.bell/MathStackExchange/MSE_images/MathmaticaImages"
+    WIKI_TSV_PATH = "/mnt/netstore1_home/aidan.bell/WikipediaMath/TIMath_Wiki.tsv"
+    WIKI_IMAGES_PATH = "/mnt/netstore1_home/aidan.bell/WikipediaMath/Wiki_Images"
+    DATASET_OUTPUT_PATH = None
+    MISSING_OUTPUT_PATH = None
 
     # MSE_TSV_PATH = "/mnt/netstore1_home/aidan.bell/MathTesting/Meta.tsv"
     # MSE_IMAGES_PATH = "/mnt/netstore1_home/aidan.bell/MathTesting/Images"
@@ -82,30 +82,31 @@ if __name__ == "__main__":
     # DATASET_OUTPUT_PATH = None
     # MISSING_OUTPUT_PATH = None
 
+    # MSE_TSV_PATH = "mini_mse/metadata.tsv"
+    # MSE_IMAGES_PATH = "mini_mse/Images"
+    # WIKI_TSV_PATH = "mini_wiki/metadata.tsv"
+    # WIKI_IMAGES_PATH = "mini_wiki/Images"
+    # DATASET_OUTPUT_PATH = None
+    # MISSING_OUTPUT_PATH = None
 
-    MSE_TSV_PATH = "mini_mse/metadata.tsv"
-    MSE_IMAGES_PATH = "mini_mse/Images"
-    WIKI_TSV_PATH = "mini_wiki/metadata.tsv"
-    WIKI_IMAGES_PATH = "mini_wiki/Images"
-    DATASET_OUTPUT_PATH = None
-    MISSING_OUTPUT_PATH = None
-
-    FINAL_OUTPUT_PATH = "Final-Dataset2"
-    #TODO Make an argparser for filtering.
-    MATH_OUTPUT_PATH = "Merged-Math-Dataset2"
-    SIM_OUTPUT_PATH = "Merged-Sim-Dataset2"
-    MATH_THRESHOLD = 0.5
-    SIM_THRESHOLD = 0.5
+    # FINAL_OUTPUT_PATH = "Final-Dataset"
+    OUTPUT_PATH = "Merged-Math-Dataset"
+    # OUTPUT_PATH = "Merged-Sim-Dataset"
+    THRESHOLD = 0.5
     ENV_PATH = ".env"
     HF_TOKEN = None
 
+    MATH_PROMPT = "Text: {text}\n\nDoes the image and text content relate to math? Respond with 1 if yes, or 0 for no. Output only the number and no extra text."
+    # SIM_PROMPT = "Text: {text}\n\nAre the image and text related? Respond with 1 if yes, or 0 for no. Output only the number and no extra text."
+
     dataset, missing = merge(MSE_TSV_PATH, MSE_IMAGES_PATH, WIKI_TSV_PATH, WIKI_IMAGES_PATH, DATASET_OUTPUT_PATH, MISSING_OUTPUT_PATH)
-    true_math_samples, true_sim_samples = vf.filter(dataset, missing, MATH_OUTPUT_PATH, SIM_OUTPUT_PATH, MATH_THRESHOLD, SIM_THRESHOLD, ENV_PATH, HF_TOKEN)
-    final_dataset = finalize(true_math_samples, true_sim_samples, FINAL_OUTPUT_PATH)
+    true_math_samples = vf.filter(dataset, MATH_PROMPT, missing, OUTPUT_PATH, THRESHOLD, ENV_PATH, HF_TOKEN)
+    # true_sim_samples = vf.filter(dataset, SIM_PROMPT, missing, OUTPUT_PATH, THRESHOLD, ENV_PATH, HF_TOKEN)
+    # final_dataset = finalize(true_math_samples, true_sim_samples, FINAL_OUTPUT_PATH)
 
     print(f"Original Merged Dataset Size: {len(dataset)}")
-    print(f"Final Dataset Size: {len(final_dataset)}")
+    print(f"Final Dataset Size: {len(true_math_samples)}")
     print(f"Missing/Corrupted: {len(missing)}")
-    print(f"Filtered out by similarity: {len(dataset) - (len(true_sim_samples) + len(missing))}")
+    # print(f"Filtered out by similarity: {len(dataset) - (len(true_sim_samples) + len(missing))}")
     print(f"Filtered out by math relation: {len(dataset) - (len(true_math_samples) + len(missing))}")
     

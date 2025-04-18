@@ -7,35 +7,30 @@ from PIL import Image
 from typing import Union
 from dotenv import load_dotenv
 from huggingface_hub import login
-from transformers import MllamaForConditionalGeneration, AutoModelForCausalLM, AutoProcessor, BitsAndBytesConfig
+from transformers import MllamaForConditionalGeneration, AutoProcessor, AutoModelForCausalLM, BitsAndBytesConfig
 
-def filter(dataset_or_path:Union[str, list[str]], missing_or_path:Union[str, list[str]], math_output_path:str=None, sim_output_path:str=None, math_threshold:int=0.5, similarity_threshold:int=0.5, env_path:str=None, hf_token:str=None):
+def filter(dataset_or_path:Union[str, list[str]], prompt:str, missing_or_path:Union[str, list[str]], output_path:str, threshold:int=0.5, env_path:str=None, hf_token:str=None)->list[list[str]]:
     """
-    Filter math samples from datasets using Llama3.2 vision.
+    Filter samples from datasets using Llama3.2 vision.
     
     Args:
         dataset_or_path: Path to dataset .tsv file, or dataset of format: [[id, title/text, image_path], ...]
+        prompt: Classification prompt for the model. Prompt must ask for a 1 or a 0 label, and must contain a {text} var that will be filled by a formatter. e.g >>> 'Text: {text}\n\nDoes the image and text content relate to math? Respond with 1 if yes, or 0 for no. Output only the number and no extra text.'
         missing_or_path: Path to missing .txt file, or set with missing ids. These will be excluded from the returned datasets.
-        math_output_path: .tsv file to save math filtered dataset in.
-        sim_output_path: .tsv file to save similarity filtered dataset in.
-        math_threshold: "confidence" required to classify sample as math. Specifically, confidence = output of softmax(true_token) with denominator containing true_token and false_token.
-        similarity_threshold: "confidence" required to classify a text and image as being related. Specifically, confidence = output of softmax(true_token) with denominator containing true_token and false_token.
+        output_path: .tsv file to save filtered dataset in.
+        threshold: "confidence" required to classify sample as 1. Specifically, confidence = output of softmax(true_token) with denominator containing true_token and false_token.
         env_path: Path to .env file, which must contain "HF_TOKEN" field with hugging face llama access token as its value. 
         hf_token: Hugging face llama access token. You must provide this, or env_path.
-    """
-    MATH_PROMPT = "Text: {text}\n\nDoes the image and text content relate to math? Respond with 1 if yes, or 0 for no. Output only the number and no extra text."
-    SIM_PROMPT = "Text: {text}\n\nAre the image and text related? Respond with 1 if yes, or 0 for no. Output only the number and no extra text."
-    MODEL_ID = "meta-llama/Llama-3.2-11B-Vision-Instruct"
-    BNB_CONFIG = BitsAndBytesConfig(load_in_8bit=True)
 
-    if math_output_path:
-        if os.path.exists(math_output_path):
-            raise FileExistsError(f"Designated output_path: {math_output_path} already exists. Please delete it or provide a different output_path.")
-        os.makedirs(math_output_path)
-    if sim_output_path:
-        if os.path.exists(sim_output_path):
-            raise FileExistsError(f"Designated output_path: {sim_output_path} already exists. Please delete it or provide a different output_path.")
-        os.makedirs(sim_output_path)
+    Returns:
+        true_samples: list where each item is a sample.
+    """
+    MODEL_ID = "meta-llama/Llama-3.2-11B-Vision-Instruct"
+
+    if output_path:
+        if os.path.exists(output_path):
+            raise FileExistsError(f"Designated output_path: {output_path} already exists. Please delete it or provide a different output_path.")
+        os.makedirs(output_path)
 
     assert env_path or hf_token
     if(env_path):
@@ -46,6 +41,8 @@ def filter(dataset_or_path:Union[str, list[str]], missing_or_path:Union[str, lis
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     processor = AutoProcessor.from_pretrained(MODEL_ID)
 
+    # quantization has a large negative effect on perceived classification accuracy
+    # BNB_CONFIG = BitsAndBytesConfig(load_in_8bit=True)
     # model = AutoModelForCausalLM.from_pretrained(
     #     MODEL_ID,
     #     quantization_config=BNB_CONFIG,
@@ -59,22 +56,15 @@ def filter(dataset_or_path:Union[str, list[str]], missing_or_path:Union[str, lis
     )
     model.eval()
 
-    math_results, _ = _run_filter(model, dataset_or_path, missing_or_path, MATH_PROMPT, math_threshold, processor, device)
-    sim_results, no_missing_dataset = _run_filter(model, dataset_or_path, missing_or_path, SIM_PROMPT, similarity_threshold, processor, device)
+    results, no_missing_dataset = _run_filter(model, dataset_or_path, missing_or_path, prompt, threshold, processor, device)
+    true_samples = [no_missing_dataset[idx] for idx, classification in enumerate(results) if classification == True]
 
-    true_math_samples = [no_missing_dataset[idx] for idx, classification in enumerate(math_results) if classification == True]
-    true_sim_samples = [no_missing_dataset[idx] for idx, classification in enumerate(sim_results) if classification == True]
-
-    if math_output_path:
-        with open(os.path.join(math_output_path, "Meta.tsv"), 'w', encoding='utf-8') as f:
+    if output_path:
+        with open(os.path.join(output_path, "Meta.tsv"), 'w', encoding='utf-8') as f:
             writer = csv.writer(f, delimiter='\t')
-            writer.writerows(true_math_samples)
-    if sim_output_path:
-        with open(os.path.join(sim_output_path, "Meta.tsv"), 'w', encoding='utf-8') as f:
-            writer = csv.writer(f, delimiter='\t')
-            writer.writerows(true_sim_samples)
+            writer.writerows(true_samples)
 
-    return true_math_samples, true_sim_samples
+    return true_samples
 
 def _run_filter(model, dataset_or_path, missing_or_path, prompt, threshold, processor, device)->Union[list[str], list[str]]:
     """
