@@ -100,8 +100,8 @@ if __name__ == "__main__":
     # SIM_PROMPT = "Text: {text}\n\nAre the image and text related? Respond with 1 if yes, or 0 for no. Output only the number and no extra text."
 
     dataset, missing = merge(MSE_TSV_PATH, MSE_IMAGES_PATH, WIKI_TSV_PATH, WIKI_IMAGES_PATH, DATASET_OUTPUT_PATH, MISSING_OUTPUT_PATH)
-    true_math_samples = vf.filter(dataset, MATH_PROMPT, missing, OUTPUT_PATH, THRESHOLD, ENV_PATH, HF_TOKEN)
-    # true_sim_samples = vf.filter(dataset, SIM_PROMPT, missing, OUTPUT_PATH, THRESHOLD, ENV_PATH, HF_TOKEN)
+    true_math_samples = vf.filter(dataset, MATH_PROMPT, missing, OUTPUT_PATH, THRESHOLD, ENV_PATH, HF_TOKEN, 10000, "fallback")
+    # true_sim_samples = vf.filter(dataset, SIM_PROMPT, missing, OUTPUT_PATH, THRESHOLD, ENV_PATH, HF_TOKEN, 10000, "fallback")
     # final_dataset = finalize(true_math_samples, true_sim_samples, FINAL_OUTPUT_PATH)
 
     print(f"Original Merged Dataset Size: {len(dataset)}")

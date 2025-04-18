@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 from huggingface_hub import login
 from transformers import MllamaForConditionalGeneration, AutoProcessor, AutoModelForCausalLM, BitsAndBytesConfig
 
-def filter(dataset_or_path:Union[str, list[str]], prompt:str, missing_or_path:Union[str, list[str]], output_path:str, threshold:int=0.5, env_path:str=None, hf_token:str=None)->list[list[str]]:
+def filter(dataset_or_path:Union[str, list[str]], prompt:str, missing_or_path:Union[str, list[str]], output_path:str, threshold:int=0.5, env_path:str=None, hf_token:str=None, save_every:int=None, save_every_dir:str=None)->list[list[str]]:
     """
     Filter samples from datasets using Llama3.2 vision.
     
@@ -18,9 +18,11 @@ def filter(dataset_or_path:Union[str, list[str]], prompt:str, missing_or_path:Un
         prompt: Classification prompt for the model. Prompt must ask for a 1 or a 0 label, and must contain a {text} var that will be filled by a formatter. e.g >>> 'Text: {text}\n\nDoes the image and text content relate to math? Respond with 1 if yes, or 0 for no. Output only the number and no extra text.'
         missing_or_path: Path to missing .txt file, or set with missing ids. These will be excluded from the returned datasets.
         output_path: .tsv file to save filtered dataset in.
-        threshold: "confidence" required to classify sample as 1. Specifically, confidence = output of softmax(true_token) with denominator containing true_token and false_token.
-        env_path: Path to .env file, which must contain "HF_TOKEN" field with hugging face llama access token as its value. 
-        hf_token: Hugging face llama access token. You must provide this, or env_path.
+        threshold (default=0.5): "confidence" required to classify sample as 1. Specifically, confidence = output of softmax(true_token) with denominator containing true_token and false_token.
+        env_path (optional*): Path to .env file, which must contain "HF_TOKEN" field with hugging face llama access token as its value. 
+        hf_token (optional*): Hugging face llama access token. You must provide this, or env_path.
+        save_every (optional): If provided, the output dataset will be saved each time that many samples have been classified.
+        save_every_dir (optional): Directory to save data if save_every is provided.
 
     Returns:
         true_samples: list where each item is a sample.
@@ -32,6 +34,12 @@ def filter(dataset_or_path:Union[str, list[str]], prompt:str, missing_or_path:Un
             raise FileExistsError(f"Designated output_path: {output_path} already exists. Please delete it or provide a different output_path.")
         os.makedirs(output_path)
 
+    if save_every_dir:
+        if os.path.exists(save_every_dir):
+            raise FileExistsError(f"Designated save_every_dir: {save_every_dir} already exists. Please delete it or provide a different save_every_dir.")
+        os.makedirs(save_every_dir)
+
+    assert bool(save_every) == bool(save_every_dir)
     assert env_path or hf_token
     if(env_path):
         load_dotenv(env_path)
@@ -56,7 +64,7 @@ def filter(dataset_or_path:Union[str, list[str]], prompt:str, missing_or_path:Un
     )
     model.eval()
 
-    results, no_missing_dataset = _run_filter(model, dataset_or_path, missing_or_path, prompt, threshold, processor, device)
+    results, no_missing_dataset = _run_filter(model, dataset_or_path, missing_or_path, prompt, threshold, processor, device, save_every, save_every_dir)
     true_samples = [no_missing_dataset[idx] for idx, classification in enumerate(results) if classification == True]
 
     if output_path:
@@ -66,7 +74,7 @@ def filter(dataset_or_path:Union[str, list[str]], prompt:str, missing_or_path:Un
 
     return true_samples
 
-def _run_filter(model, dataset_or_path, missing_or_path, prompt, threshold, processor, device)->Union[list[str], list[str]]:
+def _run_filter(model, dataset_or_path, missing_or_path, prompt, threshold, processor, device, save_every, save_every_dir)->Union[list[str], list[str]]:
     """
     Convert a dataset into input ready batch. Also returns the original dataset with all missing/corrupted samples removed.
     """
@@ -93,6 +101,7 @@ def _run_filter(model, dataset_or_path, missing_or_path, prompt, threshold, proc
     true_token_id = processor.tokenizer.convert_tokens_to_ids(processor.tokenizer.tokenize("1")[0])
     false_token_id = processor.tokenizer.convert_tokens_to_ids(processor.tokenizer.tokenize("0")[0])
     results = []
+    since_last_save = 0
     for sample in tqdm(dataset, total=len(dataset), desc="Classifying Samples"):
         msg[0]["content"][1]["text"] = prompt.format(text=sample[1])
         input_text = processor.apply_chat_template(msg, add_generation_prompt=True)
@@ -100,6 +109,12 @@ def _run_filter(model, dataset_or_path, missing_or_path, prompt, threshold, proc
         input = processor(input_image, input_text, add_special_tokens=False, padding=True, truncation=True, return_tensors="pt").to(device)
         results.append(_classify_until_answer(model, input, threshold, true_token_id, false_token_id, topk=1))
         input_image.close()
+        since_last_save += 1
+        if save_every and since_last_save >= save_every:
+            with open(os.path.join(save_every_dir, "Meta.tsv"), 'w', encoding='utf-8') as f:
+                writer = csv.writer(f, delimiter='\t')
+                writer.writerows([dataset[idx] for idx, classification in enumerate(results) if classification == True])
+            since_last_save = 0
 
     return results, dataset
 
