@@ -4,6 +4,10 @@ from src.experiment.prepare_data import process_mse, process_wikipedia
 import os
 import csv
 
+"""
+This script was used to create the merged and filtered MSE/WIKI dataset.
+"""
+
 def merge(mse_tsv:str, mse_images:str, wiki_tsv:str, wiki_images:str, dataset_output_path:str=None, missing_output_path:str=None):
     """
     Merge the MSE and Wikipedia datasets.
