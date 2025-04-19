@@ -1,6 +1,7 @@
 from Long_CLIP.model import longclip
 
 import os
+import csv
 import math
 import torch
 import numpy as np
@@ -19,7 +20,6 @@ from adabelief_pytorch import AdaBelief
 class MathDataset(Dataset):
     def __init__(self, metadata:list[list[str]], corrupted_ids:set[str], transform=None):
         self.metadata = [sample for sample in metadata if sample[0] not in corrupted_ids] # get only non-corrupted samples
-        self.corrupted_ids = corrupted_ids
         self.transform = transform
 
     def __len__(self):
@@ -73,12 +73,18 @@ def finetune(rank:int, distributed:bool, splits_path:str, corrupted_path:str, ch
     model, preprocess = longclip.load(checkpoint_input_path, device=rank)
 
     # Gather corrupted ids
-    with open(corrupted_path, 'r', encoding='utf-8') as f:
-        corrupted_ids = {line.strip() for line in f}
+    corrupted_ids = set()
+    if corrupted_path:
+        with open(corrupted_path, 'r', encoding='utf-8') as f:
+            corrupted_ids = {line.strip() for line in f}
 
     # Get datasets 
-    train_split = np.load(os.path.join(splits_path, "train_split.npy"))
-    val_split = np.load(os.path.join(splits_path, "val_split.npy"))
+    with open(os.path.join(splits_path, "train_split.tsv"), encoding='utf-8') as f1:
+        reader = csv.reader(f1, delimiter='\t')
+        train_split = list(reader)
+    with open(os.path.join(splits_path, "val_split.tsv"), encoding='utf-8') as f2:
+        reader = csv.reader(f2, delimiter='\t')
+        val_split = list(reader)
     train_dataset = MathDataset(train_split, corrupted_ids, transform=preprocess)
     val_dataset = MathDataset(val_split, corrupted_ids, transform=preprocess)
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)

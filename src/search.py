@@ -48,10 +48,10 @@ def quick_search(checkpoint_path:str, search_type:str='t2i', texts_path:str=None
     Args:
         checkpoint_path: Path to Long-CLIP checkpoint file.
         search_type (Default='t2i'): For text to image search, this should be 't2i'. For image to text search, this should be 'i2t'. 
-        texts_path (optional): Path to .txt file where each newline is a text. Either this or texts must be provided.
-        texts (optional): A single text, or a list of texts. Either this or texts_path must be provided.
-        images_path (optional): Path to directory containing the images to use. Either this or images must be provided.
-        images (optional): A single image, or a list of images. Either this or images_path must be provided.
+        texts_path (optional): Path to .txt file where each newline is a text. Either this or texts arg must be provided.
+        texts (optional): A single text, or a list of texts. Either this or texts_path arg must be provided.
+        images_path (optional): Path to directory containing the images to use. Either this or images arg must be provided.
+        images (optional): A single image, or a list of images. Either this or images_path arg must be provided.
         output_path (optional): .json path to save results in.
         batch_size (Default=100): Max number of samples to encode at once. Make this smaller to lower the memory usage, or larger to speed up the encoding.
         top_n (Default=100): How many results to return for each query.

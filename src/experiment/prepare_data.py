@@ -1,7 +1,8 @@
 from Long_CLIP.model import longclip
 
-import csv
 import os
+import csv
+import random
 import numpy as np
 from tqdm import tqdm
 from typing import Union
@@ -62,26 +63,57 @@ def integrity(metadata, output_path:str=None, ignore_exception:bool=False)->Unio
 
     return integral_data, missing
 
-def process_mse(metadata_path:str, images_path:str, missing_output_path:str=None, validate_data:bool=False, has_header:bool=True)->tuple[list[list[str]], list[str]]:
+def process_generic(metadata_path:str, missing_output_path:str=None, validate_data:bool=False, has_header:bool=True)->tuple[list[list[str]], list[str]]:
     """
-    metadata_path: path to .tsv MSE data.
-    images_path: path to directory containing MSE dataset images.
-    missing_output_path: .txt file to save ids which are missing or corrupted.
-    validate_data: if True, the entire MSE dataset will be checked for corrupted files or other invalidations (slow for large datasets).
-    has_header (default=True): Will skip the first row (header) if true.
+    Process a generic dataset. Must have a .tsv file of the format -> id, text, images_path.
+
+    Args:
+        metadata_path: path to .tsv data.
+        missing_output_path: .txt file to save ids which are missing or corrupted.
+        validate_data: if True, the entire dataset will be checked for corrupted files or other invalidations (slow for large datasets).
+        has_header (default=False): Will skip the first row (header) if true.
 
     Returns:
-        metadata: list/tuple of format [[id, title, image_path], ...].
+        metadata: list/tuple of format: [[id, text, image_path], ...]
         missing: A list containing all missing ids.
     """
-    metadata = [] # [[id, title, image_path], ...]
+    metadata = [] # [[id, text, image_path], ...]
+    with open(metadata_path, "r", encoding='utf-8') as f:
+        if has_header: 
+            next(reader, None)
+        reader = csv.reader(f, delimiter="\t")
+        for row in reader:
+            curr_row = [row[0], row[1], row[2]] # id, text, image_path
+            metadata.append(curr_row)
+    
+    # data validation
+    missing = []
+    if(validate_data):
+        _, missing = integrity(metadata, output_path=missing_output_path, ignore_exception=True)
+
+    return metadata, missing
+
+def process_mse(metadata_path:str, images_path:str, missing_output_path:str=None, validate_data:bool=False, has_header:bool=True)->tuple[list[list[str]], list[str]]:
+    """
+    Args:
+        metadata_path: path to .tsv MSE data.
+        images_path: path to directory containing MSE dataset images.
+        missing_output_path: .txt file to save ids which are missing or corrupted.
+        validate_data: if True, the entire MSE dataset will be checked for corrupted files or other invalidations (slow for large datasets).
+        has_header (default=True): Will skip the first row (header) if true.
+
+    Returns:
+        metadata: list/tuple of format [[id, text, image_path], ...].
+        missing: A list containing all missing ids.
+    """
+    metadata = [] # [[id, text, image_path], ...]
     with open(metadata_path, "r", encoding='utf-8') as f:
         reader = csv.reader(f, delimiter="\t")
         if has_header: 
             next(reader, None)
         for row in reader:
             if(row[1][-2:] == '_0'): # only one image per text (might attempt to modify loss function to support multiple true pairs)
-                curr_row = [row[1], row[2], os.path.join(images_path, row[1]+".png")] # id, title, image_path
+                curr_row = [row[1], row[2], os.path.join(images_path, row[1]+".png")] # id, text, image_path
                 metadata.append(curr_row)
     
     # data validation
@@ -93,23 +125,24 @@ def process_mse(metadata_path:str, images_path:str, missing_output_path:str=None
 
 def process_wikipedia(metadata_path:str, images_path:str, missing_output_path:str=None, validate_data:bool=False, has_header:bool=False)->tuple[list[list[str]], list[str]]:
     """
-    metadata_path: path to .tsv Wikipedia data.
-    images_path: path to directory containing Wikipedia dataset images.
-    missing_output_path: .txt file to save ids which are missing or corrupted.
-    validate_data: if True, the entire Wikipedia dataset will be checked for corrupted files or other invalidations (slow for large datasets).
-    has_header (default=False): Will skip the first row (header) if true.
+    Args:
+        metadata_path: path to .tsv Wikipedia data.
+        images_path: path to directory containing Wikipedia dataset images.
+        missing_output_path: .txt file to save ids which are missing or corrupted.
+        validate_data: if True, the entire Wikipedia dataset will be checked for corrupted files or other invalidations (slow for large datasets).
+        has_header (default=False): Will skip the first row (header) if true.
 
     Returns:
-    metadata: list/tuple of format: [[id, title, image_path], ...]
-    missing: A list containing all missing ids.
+        metadata: list/tuple of format: [[id, text, image_path], ...]
+        missing: A list containing all missing ids.
     """
-    metadata = [] # [[id, title, image_path], ...]
+    metadata = [] # [[id, text, image_path], ...]
     with open(metadata_path, "r", encoding='utf-8') as f:
         if has_header: 
             next(reader, None)
         reader = csv.reader(f, delimiter="\t")
         for row in reader:
-            curr_row = [row[0], row[2], os.path.join(images_path, row[0])] # id, title, image_path
+            curr_row = [row[0], row[2], os.path.join(images_path, row[0])] # id, text, image_path
             metadata.append(curr_row)
     
     # data validation
@@ -119,8 +152,18 @@ def process_wikipedia(metadata_path:str, images_path:str, missing_output_path:st
 
     return metadata, missing
 
-    
+def create_splits(data):
+    random.shuffle(data)
+    n = len(data)
+    train_end = int(n * 0.8)
+    val_end = train_end + int(n * 0.1)
+    train = data[:train_end]
+    val = data[train_end:val_end]
+    test = data[val_end:]
+    return train, test, val
 
 
+
+
+
     
-        
