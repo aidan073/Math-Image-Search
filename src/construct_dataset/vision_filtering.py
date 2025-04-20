@@ -88,6 +88,8 @@ def _run_filter(model, dataset_or_path, missing_or_path, prompt, threshold, proc
     if isinstance(missing_or_path, str):
         with open(missing_or_path, 'r', encoding='utf-8') as f:
             missing = {missing_id.strip() for missing_id in f}
+    elif missing_or_path is None:
+        missing = set()
     else:
         missing = missing_or_path
     # load dataset
@@ -134,10 +136,13 @@ def _classify_until_answer(model, input, threshold, id_1, id_0, max_steps=10, to
 
         if id_1 in topk_ids or id_0 in topk_ids:
             target_logits = logits[:, [id_1, id_0]]
-            logit_pred = torch.nn.functional.softmax(target_logits, dim=1)
-            prediction = True if logit_pred[0, 0] >= threshold else False
+            difference = target_logits[:, 0] - target_logits[:, 1]
+            required = torch.log(torch.tensor(threshold / (1 - threshold)))
+            prediction = difference >= required
+            # logit_pred = torch.nn.functional.softmax(target_logits, dim=1)
+            # prediction = True if logit_pred[0, 0] >= threshold else False
 
-            return prediction
+            return prediction.item()
 
         # Append the most likely token and update attention masks
         next_token_id = topk_ids[0]

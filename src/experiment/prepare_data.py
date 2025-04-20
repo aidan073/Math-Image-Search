@@ -31,14 +31,15 @@ def validate_image(image_path, ignore_exception:bool)->bool:
 def validate_entry(entry, ignore_exception:bool)->bool:
     return True
   
-def integrity(metadata, output_path:str=None, ignore_exception:bool=False)->Union[bool,list[str]]:
+def integrity(metadata, output_path:str=None, ignore_exception:bool=False, remove_corrupted:bool=False)->Union[bool,list[str]]:
     """
     Verifys the integrity of the metadata file and the images, ensuring that images exist and the images are not corrupted.
 
     Args:
         metadata: Metadata iterable. Should be list/tuple of format: [[id, title, image_path], ...]
         output_path: .txt file path to save missing/corrupted image ids in.
-        ignore_exception: If set to True, the program execution will continue and return False when a corrupted file is found (instead of raising an exception).
+        ignore_exception (default=False): If set to True, the program execution will continue and return False when a corrupted file is found (instead of raising an exception).
+        remove_corrupted (default=False): Corrupted files will be removed from dataset.
 
     Returns: 
         integral_data: If the entire dataset is integeral or not.
@@ -50,12 +51,14 @@ def integrity(metadata, output_path:str=None, ignore_exception:bool=False)->Unio
     
     missing = []
     integral_data = True
-    for item in tqdm(metadata, desc="Verifying integrity of each sample"):
+    for item in tqdm(metadata[:], desc="Verifying integrity of each sample"): # deep copy outer list with shallow copy of samples in case remove_corrupted
         valid_image = validate_image(item[2], ignore_exception)
         valid_entry = validate_entry(item[1], ignore_exception)
         if not (valid_image and valid_entry):
             integral_data = False
             missing.append(item[0])
+            if remove_corrupted:
+                metadata.remove(item)
 
     if output_path:
         with open(output_path, 'w', encoding='utf-8') as f:
@@ -63,7 +66,7 @@ def integrity(metadata, output_path:str=None, ignore_exception:bool=False)->Unio
 
     return integral_data, missing
 
-def process_generic(metadata_path:str, missing_output_path:str=None, validate_data:bool=False, has_header:bool=True)->tuple[list[list[str]], list[str]]:
+def process_generic(metadata_path:str, missing_output_path:str=None, validate_data:bool=False, has_header:bool=True, remove_corrupted:bool=False)->tuple[list[list[str]], list[str]]:
     """
     Process a generic dataset. Must have a .tsv file of the format -> id, text, images_path.
 
@@ -72,6 +75,7 @@ def process_generic(metadata_path:str, missing_output_path:str=None, validate_da
         missing_output_path: .txt file to save ids which are missing or corrupted.
         validate_data: if True, the entire dataset will be checked for corrupted files or other invalidations (slow for large datasets).
         has_header (default=False): Will skip the first row (header) if true.
+        remove_corrupted (default=False): Corrupted samples will be removed from the dataset.
 
     Returns:
         metadata: list/tuple of format: [[id, text, image_path], ...]
@@ -89,11 +93,11 @@ def process_generic(metadata_path:str, missing_output_path:str=None, validate_da
     # data validation
     missing = []
     if(validate_data):
-        _, missing = integrity(metadata, output_path=missing_output_path, ignore_exception=True)
+        _, missing = integrity(metadata, output_path=missing_output_path, ignore_exception=True, remove_corrupted=remove_corrupted)
 
     return metadata, missing
 
-def process_mse(metadata_path:str, images_path:str, missing_output_path:str=None, validate_data:bool=False, has_header:bool=True)->tuple[list[list[str]], list[str]]:
+def process_mse(metadata_path:str, images_path:str, missing_output_path:str=None, validate_data:bool=False, has_header:bool=True, remove_corrupted:bool=False)->tuple[list[list[str]], list[str]]:
     """
     Args:
         metadata_path: path to .tsv MSE data.
@@ -101,6 +105,7 @@ def process_mse(metadata_path:str, images_path:str, missing_output_path:str=None
         missing_output_path: .txt file to save ids which are missing or corrupted.
         validate_data: if True, the entire MSE dataset will be checked for corrupted files or other invalidations (slow for large datasets).
         has_header (default=True): Will skip the first row (header) if true.
+        remove_corrupted (default=False): Corrupted samples will be removed from the dataset.
 
     Returns:
         metadata: list/tuple of format [[id, text, image_path], ...].
@@ -119,11 +124,11 @@ def process_mse(metadata_path:str, images_path:str, missing_output_path:str=None
     # data validation
     missing = []
     if(validate_data):
-        _, missing = integrity(metadata, output_path=missing_output_path, ignore_exception=True)
+        _, missing = integrity(metadata, output_path=missing_output_path, ignore_exception=True, remove_corrupted=remove_corrupted)
 
     return metadata, missing
 
-def process_wikipedia(metadata_path:str, images_path:str, missing_output_path:str=None, validate_data:bool=False, has_header:bool=False)->tuple[list[list[str]], list[str]]:
+def process_wikipedia(metadata_path:str, images_path:str, missing_output_path:str=None, validate_data:bool=False, has_header:bool=False, remove_corrupted:bool=False)->tuple[list[list[str]], list[str]]:
     """
     Args:
         metadata_path: path to .tsv Wikipedia data.
@@ -131,6 +136,7 @@ def process_wikipedia(metadata_path:str, images_path:str, missing_output_path:st
         missing_output_path: .txt file to save ids which are missing or corrupted.
         validate_data: if True, the entire Wikipedia dataset will be checked for corrupted files or other invalidations (slow for large datasets).
         has_header (default=False): Will skip the first row (header) if true.
+        remove_corrupted (default=False): Corrupted samples will be removed from the dataset.
 
     Returns:
         metadata: list/tuple of format: [[id, text, image_path], ...]
@@ -148,7 +154,7 @@ def process_wikipedia(metadata_path:str, images_path:str, missing_output_path:st
     # data validation
     missing = []
     if(validate_data):
-        _, missing = integrity(metadata, output_path=missing_output_path, ignore_exception=True)
+        _, missing = integrity(metadata, output_path=missing_output_path, ignore_exception=True, remove_corrupted=remove_corrupted)
 
     return metadata, missing
 

@@ -1,11 +1,11 @@
 from Long_CLIP.model.longclip import tokenize, load
 
 import os
+import csv
 import json
 import torch
 import argparse
 import torchvision
-import numpy as np
 from ranx import Run
 from tqdm import tqdm
 from PIL import Image
@@ -132,7 +132,7 @@ def full_search(checkpoint_path:str, test_split_path:dict, output_path:str=None,
 
     Args:
         checkpoint_path: Path to Long-CLIP checkpoint file.
-        test_split_path: Path to test split json file.
+        test_split_path: Path to test split .tsv file.
         output_path (optional): Save run to this path.
         missing_or_corrupted (optional): Set of str ids that are corrupted, or Path to .txt file in which each row contains the sample id of a corrupted image.
         batch_size (optional): Max number of samples per batch during encoding. Make this larger to speed up encoding, or smaller to prevent out of memory errors.
@@ -181,7 +181,9 @@ def _load_test(test_split_path:str, device:str, tokenize:Callable[[Union[str, li
             with open(missing_or_corrupted, "r", encoding='utf-8') as f:
                 mc_set.update(line.strip() for line in f)
     
-    test_split = np.load(test_split_path)
+    with open(test_split_path, 'r', encoding='utf-8') as f:
+        reader = csv.reader(f, delimiter='\t')
+        test_split = list(reader)
     ids = []
     texts = []
     images = []
