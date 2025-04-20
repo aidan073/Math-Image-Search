@@ -156,4 +156,4 @@ def _classify_until_answer(model, input, req_logit_diff, id_1, id_0, max_steps=1
         "[[[[1,1,0,0]]],[[[1,1,0,0]]],...]"
         
     print(f"Reached classification attempt limit of {max_steps}")
-    return False
+    return True
