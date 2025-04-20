@@ -14,8 +14,8 @@ def merge(mse_tsv:str, mse_images:str, wiki_tsv:str, wiki_images:str, dataset_ou
     """
     Merge the MSE and Wikipedia datasets.
     """
-    mse_data, mse_missing = process_mse(mse_tsv, mse_images, validate_data=False, has_header=True, remove_corrupted=remove_corrupted)
-    wiki_data, wiki_missing = process_wikipedia(wiki_tsv, wiki_images, validate_data=False, has_header=False, remove_corrupted=remove_corrupted)
+    mse_data, mse_missing = process_mse(mse_tsv, mse_images, validate_data=True, has_header=True, remove_corrupted=remove_corrupted)
+    wiki_data, wiki_missing = process_wikipedia(wiki_tsv, wiki_images, validate_data=True, has_header=False, remove_corrupted=remove_corrupted)
     merged_data = mse_data + wiki_data
     merged_missing = mse_missing + wiki_missing
 

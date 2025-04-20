@@ -100,6 +100,7 @@ def _run_filter(model, dataset_or_path, missing_or_path, prompt, threshold, proc
     else:
         dataset = [sample for sample in dataset_or_path if sample[0] not in missing]
 
+    req_logit_diff = torch.log(torch.tensor(threshold / (1 - threshold))) # required logit difference to meet confidence threshold
     true_token_id = processor.tokenizer.convert_tokens_to_ids(processor.tokenizer.tokenize("1")[0])
     false_token_id = processor.tokenizer.convert_tokens_to_ids(processor.tokenizer.tokenize("0")[0])
     results = []
@@ -109,7 +110,7 @@ def _run_filter(model, dataset_or_path, missing_or_path, prompt, threshold, proc
         input_text = processor.apply_chat_template(msg, add_generation_prompt=True)
         input_image = Image.open(sample[2])
         input = processor(input_image, input_text, add_special_tokens=False, padding=True, truncation=True, return_tensors="pt").to(device)
-        results.append(_classify_until_answer(model, input, threshold, true_token_id, false_token_id, topk=1))
+        results.append(_classify_until_answer(model, input, req_logit_diff, true_token_id, false_token_id, topk=1))
         input_image.close()
         since_last_save += 1
         if save_every and since_last_save >= save_every:
@@ -120,7 +121,7 @@ def _run_filter(model, dataset_or_path, missing_or_path, prompt, threshold, proc
 
     return results, dataset
 
-def _classify_until_answer(model, input, threshold, id_1, id_0, max_steps=10, topk=5)->bool:
+def _classify_until_answer(model, input, req_logit_diff, id_1, id_0, max_steps=10, topk=5)->bool:
     """
     Classify until the model gives a clear answer or reaches max_steps. If max_steps is reached, false classification is assumed.
     **only works for 1 sample at a time currently**
@@ -137,8 +138,7 @@ def _classify_until_answer(model, input, threshold, id_1, id_0, max_steps=10, to
         if id_1 in topk_ids or id_0 in topk_ids:
             target_logits = logits[:, [id_1, id_0]]
             difference = target_logits[:, 0] - target_logits[:, 1]
-            required = torch.log(torch.tensor(threshold / (1 - threshold)))
-            prediction = difference >= required
+            prediction = difference >= req_logit_diff
             # logit_pred = torch.nn.functional.softmax(target_logits, dim=1)
             # prediction = True if logit_pred[0, 0] >= threshold else False
 
