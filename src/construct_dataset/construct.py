@@ -30,7 +30,7 @@ def merge(mse_tsv:str, mse_images:str, wiki_tsv:str, wiki_images:str, dataset_ou
 
     return merged_data, merged_missing
 
-def finalize(true_math_samples:list[str], true_sim_samples:list[str], output_path:str=None):
+def finalize(true_math_samples:list[list[str]], true_sim_samples:list[list[str]], output_path:str=None):
     """
     Take the seperate filtered datasets, and combine into one dataset which meets all criteria. If output path provided, gathers those images and saves everything to that path.
     """
@@ -76,25 +76,42 @@ if __name__ == "__main__":
     # dataset, _ = merge(MSE_TSV, MSE_IMAGES, WIKI_TSV, WIKI_IMAGES, "merged.tsv")
 
     # filter
-    MSE_TSV_PATH = "splits/train_split.tsv"
-    OUTPUT_PATH = "Math-0.7-Train"
-    THRESHOLD = 0.7
-    ENV_PATH = ".env"
-    HF_TOKEN = None
-    MATH_PROMPT = "Text: {text}\n\nDoes the image and text content relate to math? Respond with only the number: 1 if yes, 0 if no. Do not include any explanation or words. Just output 1 or 0."
-    # # SIM_PROMPT = "Text: {text}\n\nAre the image and text related? Respond with 1 if yes, or 0 for no. Output only the number and no extra text."
-    # SIM_PROMPT = "Text: {text}\n\nAre the image and text related? Respond with only the number: 1 if yes, 0 if no. Do not include any explanation or words. Just output 1 or 0."
+    # MSE_TSV_PATH = "splits/test_split.tsv"
+    # OUTPUT_PATH = "Math-0.7-Testset"
+    # THRESHOLD = 0.7
+    # ENV_PATH = ".env"
+    # HF_TOKEN = None
+    # MATH_PROMPT = "Text: {text}\n\nDoes the image and text content relate to math? Respond with only the number: 1 if yes, 0 if no. Do not include any explanation or words. Just output 1 or 0."
+    # # # SIM_PROMPT = "Text: {text}\n\nAre the image and text related? Respond with 1 if yes, or 0 for no. Output only the number and no extra text."
+    # # SIM_PROMPT = "Text: {text}\n\nAre the image and text related? Respond with only the number: 1 if yes, 0 if no. Do not include any explanation or words. Just output 1 or 0."
 
-    dataset, missing = process_generic(MSE_TSV_PATH, validate_data=True, has_header=False)
-    true_math_samples = vf.filter(dataset, MATH_PROMPT, None, OUTPUT_PATH, THRESHOLD, ENV_PATH, HF_TOKEN, save_every=10000, save_every_dir="fallback")
-    # true_sim_samples = vf.filter(dataset, SIM_PROMPT, None, OUTPUT_PATH, THRESHOLD, ENV_PATH, HF_TOKEN)
-    # final_dataset = finalize(true_math_samples, true_sim_samples, FINAL_OUTPUT_PATH)
+    # dataset, missing = process_generic(MSE_TSV_PATH, validate_data=True, has_header=False)
+    # true_math_samples = vf.filter(dataset, MATH_PROMPT, None, OUTPUT_PATH, THRESHOLD, ENV_PATH, HF_TOKEN, save_every=10000, save_every_dir="fallback")
+    # # true_sim_samples = vf.filter(dataset, SIM_PROMPT, None, OUTPUT_PATH, THRESHOLD, ENV_PATH, HF_TOKEN, save_every=10000, save_every_dir="fallback")
+    # # final_dataset = finalize(true_math_samples, true_sim_samples, FINAL_OUTPUT_PATH)
 
-    print(f"Original Dataset Size: {len(dataset)}")
-    print(f"Final Dataset Size: {len(true_math_samples)}")
-    print(f"Missing/Corrupted: {len(missing)}")
+    # print(f"Original Dataset Size: {len(dataset)}")
+    # print(f"Final Dataset Size: {len(true_math_samples)}")
+    # print(f"Missing/Corrupted: {len(missing)}")
     # # print(f"Filtered out by similarity: {len(dataset) - (len(true_sim_samples) + len(missing))}")
-    print(f"Filtered out by math relation: {len(dataset) - (len(true_math_samples) + len(missing))}")
+    # print(f"Filtered out by math relation: {len(dataset) - (len(true_math_samples) + len(missing))}")
 
+    mtf = "testing_files/dataset_versions/math-0.7-filtered/train_split.tsv"
+    stf = "Sim-0.6-Train/Meta.tsv"
+    final_train = "0.7-0.6-Train"
+
+    mvf = "testing_files/dataset_versions/math-0.7-filtered/val_split.tsv"
+    svf = "Sim-0.6-Val/Meta.tsv"
+    final_val = "0.7-0.6-Val"
+
+    mtf_data, _ = process_generic(mtf, has_header=False)
+    stf_data, _ = process_generic(stf, has_header=False)
+    finalize(mtf_data, stf_data, final_train)
+
+    mvf_data, _ = process_generic(mvf, has_header=False)
+    svf_data, _ = process_generic(svf, has_header=False)
+    finalize(mvf_data, svf_data, final_val)
+
+    
 
     

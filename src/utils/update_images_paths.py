@@ -26,4 +26,4 @@ def update_image_paths(metadata_path, output_path, mse_image_dir, wiki_image_dir
             f.write(row + '\n')
 
 if __name__ == "__main__":
-    update_image_paths("testing_files/Merged-Sim-Dataset/Meta.tsv", "testing_files/MetaF.tsv", "/mnt/netstore1_home/aidan.bell/MathStackExchange/MSE_images/MathmaticaImages/", "/mnt/netstore1_home/aidan.bell/WikipediaMath/Wiki_Images/")
+    update_image_paths("Sim-0.8-Val/Meta.tsv", "Sim-0.8-ValF/Meta.tsv", "/mnt/netstore1_home/aidan.bell/MathStackExchange/MSE_images/MathmaticaImages/", "/mnt/netstore1_home/aidan.bell/WikipediaMath/Wiki_Images/")

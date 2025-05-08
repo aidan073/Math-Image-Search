@@ -107,7 +107,7 @@ def main():
                 world_size = torch.cuda.device_count()
                 assert world_size >= 2, f"Distributed requires at least 2 GPUs to run, but got {world_size}"
                 try:
-                    mp.spawn(finetune, args=(args.distributed, args.splits_path, args.corrupted, args.c_input_path, args.c_output_path, 25, args.batch_size, world_size), nprocs=world_size, join=True)
+                    mp.spawn(finetune, args=(args.distributed, args.splits_path, args.corrupted, args.c_input_path, args.c_output_path, 9, args.batch_size, world_size), nprocs=world_size, join=True)
                 except:
                     if dist.is_initialized():
                         dist.destroy_process_group()
@@ -116,7 +116,7 @@ def main():
                 finetune(0, args.distributed, args.splits_path, args.corrupted, args.c_input_path, args.c_output_path, batch_size=args.batch_size)
             
         case 'evaluate':
-            metrics = ['precision@1', 'mrr'] # Can modify desired metrics here. Reference Ranx library to get list of valid metric names.
+            metrics = ['precision@1', 'mrr', 'recall@20', 'recall@100'] # Can modify desired metrics here. Reference Ranx library to get list of valid metric names.
             if not (args.c_input_path and args.test_split_path):
                 raise argparse.ArgumentError(None, f"Missing required arguments for evaluate pipe. Usage: evaluate -c <Long-CLIP checkpoint path> -t <test_split_path>")
             evaluate_model(args.c_input_path, args.test_split_path, args.corrupted, metrics, args.qrel_input_path, args.eval_output_path, args.qrel_output_path, args.return_scores, args.batch_size)
